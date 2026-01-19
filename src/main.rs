@@ -1,0 +1,57 @@
+mod api;
+mod config;
+mod error;
+mod executor;
+mod models;
+mod repository;
+mod services;
+
+use crate::config::Config;
+use crate::repository::{ExecutionRepository, PluginRepository, establish_connection};
+use crate::services::{ExecutionService, PluginService};
+use api::create_router;
+use std::net::SocketAddr;
+use tower_http::trace::TraceLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Initialize tracing
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "atom_node=debug,tower_http=debug,axum=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    // Load configuration
+    let config = Config::from_env();
+    tracing::info!("Starting atom_node with config: {:?}", config);
+
+    // Establish database connection
+    let db_pool = establish_connection(&config.database_url).await?;
+    tracing::info!("Database connected: {}", config.database_url);
+
+    // Initialize repositories
+    let plugin_repo = PluginRepository::new(db_pool.clone());
+    let execution_repo = ExecutionRepository::new(db_pool);
+
+    // Initialize services
+    let plugin_service = PluginService::new(plugin_repo.clone());
+    let execution_service = ExecutionService::new(execution_repo, plugin_repo);
+
+    // Create router
+    let app = create_router(plugin_service, execution_service);
+    let app = app.layer(TraceLayer::new_for_http());
+
+    // Start server
+    let addr = format!("{}:{}", config.host, config.port);
+    let addr = addr.parse::<SocketAddr>()?;
+    tracing::info!("Server listening on {}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}

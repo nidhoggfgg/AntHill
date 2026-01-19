@@ -1,0 +1,135 @@
+use crate::error::{AppError, Result};
+use crate::models::{Execution, ExecutionStatus};
+use crate::repository::DbPool;
+use chrono::Utc;
+
+#[derive(Clone)]
+pub struct ExecutionRepository {
+    pool: DbPool,
+}
+
+impl ExecutionRepository {
+    pub fn new(pool: DbPool) -> Self {
+        Self { pool }
+    }
+
+    pub async fn create(&self, plugin_id: &str) -> Result<Execution> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        let execution = Execution {
+            id: id.clone(),
+            plugin_id: plugin_id.to_string(),
+            status: ExecutionStatus::Pending,
+            pid: None,
+            exit_code: None,
+            stdout: None,
+            stderr: None,
+            started_at: now,
+            finished_at: None,
+            error_message: None,
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO executions (id, plugin_id, status, started_at, finished_at)
+            VALUES (?, ?, ?, ?, NULL)
+            "#,
+        )
+        .bind(&execution.id)
+        .bind(&execution.plugin_id)
+        .bind(execution.status as i32)
+        .bind(execution.started_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(execution)
+    }
+
+    pub async fn get(&self, id: &str) -> Result<Execution> {
+        let execution = sqlx::query_as::<_, Execution>("SELECT * FROM executions WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| AppError::ExecutionNotFound(id.to_string()))?;
+
+        Ok(execution)
+    }
+
+    pub async fn list_by_plugin(&self, plugin_id: &str) -> Result<Vec<Execution>> {
+        let executions = sqlx::query_as::<_, Execution>(
+            "SELECT * FROM executions WHERE plugin_id = ? ORDER BY started_at DESC",
+        )
+        .bind(plugin_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(executions)
+    }
+
+    pub async fn list_all(&self) -> Result<Vec<Execution>> {
+        let executions =
+            sqlx::query_as::<_, Execution>("SELECT * FROM executions ORDER BY started_at DESC")
+                .fetch_all(&self.pool)
+                .await?;
+
+        Ok(executions)
+    }
+
+    pub async fn update_status(&self, id: &str, status: ExecutionStatus) -> Result<()> {
+        sqlx::query("UPDATE executions SET status = ? WHERE id = ?")
+            .bind(status as i32)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_pid(&self, id: &str, pid: u32) -> Result<()> {
+        sqlx::query("UPDATE executions SET pid = ?, status = ? WHERE id = ?")
+            .bind(pid as i32)
+            .bind(ExecutionStatus::Running as i32)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_result(
+        &self,
+        id: &str,
+        stdout: Option<String>,
+        stderr: Option<String>,
+        exit_code: Option<i32>,
+        status: ExecutionStatus,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE executions
+            SET stdout = ?, stderr = ?, exit_code = ?, status = ?, finished_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(stdout)
+        .bind(stderr)
+        .bind(exit_code)
+        .bind(status as i32)
+        .bind(Utc::now())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete(&self, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM executions WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+}
