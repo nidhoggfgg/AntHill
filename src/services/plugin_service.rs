@@ -140,7 +140,7 @@ impl PluginService {
                 crate::error::AppError::Execution(format!("Failed to read archive: {}", e))
             })?;
 
-            let Some(relative_path) = file.enclosed_name().map(Path::to_path_buf) else {
+            let Some(relative_path) = file.enclosed_name().as_deref().map(Path::to_path_buf) else {
                 return Err(crate::error::AppError::Execution(
                     "Invalid file path in archive".to_string(),
                 ));
