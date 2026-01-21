@@ -24,15 +24,15 @@ pub fn create_router(plugin_service: PluginService, execution_service: Execution
         // Plugin management
         .route("/api/plugins", get(plugin::list_plugins))
         .route("/api/plugins", post(plugin::install_plugin))
-        .route("/api/plugins/:id", get(plugin::get_plugin))
-        .route("/api/plugins/:id", delete(plugin::uninstall_plugin))
-        .route("/api/plugins/:id/enable", put(plugin::enable_plugin))
-        .route("/api/plugins/:id/disable", put(plugin::disable_plugin))
+        .route("/api/plugins/{id}", get(plugin::get_plugin))
+        .route("/api/plugins/{id}", delete(plugin::uninstall_plugin))
+        .route("/api/plugins/{id}/enable", put(plugin::enable_plugin))
+        .route("/api/plugins/{id}/disable", put(plugin::disable_plugin))
         // Execution
-        .route("/api/plugins/:id/execute", post(execution::execute_plugin))
+        .route("/api/plugins/{id}/execute", post(execution::execute_plugin))
         .route("/api/executions", get(execution::list_executions))
-        .route("/api/executions/:id", get(execution::get_execution))
-        .route("/api/executions/:id/stop", put(execution::stop_execution))
+        .route("/api/executions/{id}", get(execution::get_execution))
+        .route("/api/executions/{id}/stop", put(execution::stop_execution))
         .with_state(state);
 
     add_cors(api_routes)

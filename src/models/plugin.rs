@@ -9,7 +9,7 @@ pub struct Plugin {
     pub plugin_type: PluginType,
     pub description: String,
     pub author: String,
-    pub code: String,
+    pub plugin_path: String,
     pub entry_point: String,
     pub enabled: bool,
     pub created_at: DateTime<Utc>,

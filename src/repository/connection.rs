@@ -2,7 +2,16 @@ use crate::repository::DbPool;
 use anyhow::Result;
 
 pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
-    let pool = sqlx::SqlitePool::connect(database_url).await?;
+    // Ensure the database URL has the correct format
+    let db_url = if database_url.starts_with("sqlite:") {
+        database_url.to_string()
+    } else {
+        format!("sqlite:{}", database_url)
+    };
+
+    // Create connection with create_if_missing option
+    let connection_string = format!("{}?mode=rwc", db_url);
+    let pool = sqlx::SqlitePool::connect(&connection_string).await?;
 
     // Run migrations
     sqlx::query(
@@ -16,6 +25,7 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
             description TEXT,
             author TEXT,
             code TEXT NOT NULL,
+            plugin_path TEXT NOT NULL,
             entry_point TEXT NOT NULL,
             enabled BOOLEAN NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL,
@@ -44,6 +54,15 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     )
     .execute(&pool)
     .await?;
+
+    // Ensure new columns exist for older databases.
+    let _ = sqlx::query(
+        r#"
+        ALTER TABLE plugins ADD COLUMN plugin_path TEXT NOT NULL DEFAULT '';
+        "#,
+    )
+    .execute(&pool)
+    .await;
 
     Ok(pool)
 }

@@ -2,6 +2,9 @@ use crate::error::Result;
 use crate::models::{Plugin, PluginType};
 use crate::repository::PluginRepository;
 use chrono::Utc;
+use std::fs;
+use std::io::{Cursor, Read, Write};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -33,7 +36,7 @@ impl PluginService {
         plugin_type: PluginType,
         description: String,
         author: String,
-        code: String,
+        package_url: String,
         entry_point: String,
         metadata: Option<String>,
     ) -> Result<Plugin> {
@@ -42,15 +45,43 @@ impl PluginService {
             return Err(crate::error::AppError::PluginAlreadyExists(name));
         }
 
+        if entry_point.trim().is_empty() {
+            return Err(crate::error::AppError::Execution(
+                "Entry point cannot be empty".to_string(),
+            ));
+        }
+
+        let plugin_id = Uuid::new_v4().to_string();
+        let plugin_dir = Self::plugin_dir_for(&plugin_id)?;
+
+        fs::create_dir_all(&plugin_dir)?;
+
+        if let Err(err) = self
+            .download_and_extract(&package_url, &plugin_dir)
+            .await
+        {
+            let _ = fs::remove_dir_all(&plugin_dir);
+            return Err(err);
+        }
+
+        let entry_path = plugin_dir.join(&entry_point);
+        if !entry_path.is_file() {
+            let _ = fs::remove_dir_all(&plugin_dir);
+            return Err(crate::error::AppError::Execution(format!(
+                "Entry point not found: {}",
+                entry_path.display()
+            )));
+        }
+
         let now = Utc::now();
         let plugin = Plugin {
-            id: Uuid::new_v4().to_string(),
+            id: plugin_id,
             name,
             version,
             plugin_type,
             description,
             author,
-            code,
+            plugin_path: plugin_dir.to_string_lossy().to_string(),
             entry_point,
             enabled: true,
             created_at: now,
@@ -63,6 +94,14 @@ impl PluginService {
     }
 
     pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
+        let plugin = self.repo.get(id).await?;
+        if !plugin.plugin_path.is_empty() {
+            match fs::remove_dir_all(&plugin.plugin_path) {
+                Ok(_) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err.into()),
+            }
+        }
         self.repo.delete(id).await
     }
 
@@ -72,5 +111,57 @@ impl PluginService {
 
     pub async fn disable_plugin(&self, id: &str) -> Result<()> {
         self.repo.update_enabled(id, false).await
+    }
+
+    fn plugin_dir_for(plugin_id: &str) -> Result<PathBuf> {
+        let base_dir = std::env::current_dir()?.join("plugins");
+        Ok(base_dir.join(plugin_id))
+    }
+
+    async fn download_and_extract(&self, url: &str, target_dir: &Path) -> Result<()> {
+        let response = reqwest::get(url).await.map_err(|e| {
+            crate::error::AppError::Execution(format!("Failed to download package: {}", e))
+        })?;
+        let response = response.error_for_status().map_err(|e| {
+            crate::error::AppError::Execution(format!("Failed to download package: {}", e))
+        })?;
+
+        let bytes = response.bytes().await.map_err(|e| {
+            crate::error::AppError::Execution(format!("Failed to read package bytes: {}", e))
+        })?;
+
+        let reader = Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
+            crate::error::AppError::Execution(format!("Invalid zip archive: {}", e))
+        })?;
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|e| {
+                crate::error::AppError::Execution(format!("Failed to read archive: {}", e))
+            })?;
+
+            let Some(relative_path) = file.enclosed_name().map(Path::to_path_buf) else {
+                return Err(crate::error::AppError::Execution(
+                    "Invalid file path in archive".to_string(),
+                ));
+            };
+
+            let out_path = target_dir.join(relative_path);
+            if file.name().ends_with('/') {
+                fs::create_dir_all(&out_path)?;
+                continue;
+            }
+
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+
+            let mut outfile = fs::File::create(&out_path)?;
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer)?;
+            outfile.write_all(&buffer)?;
+        }
+
+        Ok(())
     }
 }

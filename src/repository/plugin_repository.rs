@@ -14,15 +14,29 @@ impl PluginRepository {
     }
 
     pub async fn list(&self) -> Result<Vec<Plugin>> {
-        let plugins = sqlx::query_as::<_, Plugin>("SELECT * FROM plugins ORDER BY created_at DESC")
-            .fetch_all(&self.pool)
-            .await?;
+        let plugins = sqlx::query_as::<_, Plugin>(
+            r#"
+            SELECT id, name, version, plugin_type, description, author, plugin_path, entry_point,
+                   enabled, created_at, updated_at, metadata
+            FROM plugins
+            ORDER BY created_at DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         Ok(plugins)
     }
 
     pub async fn get(&self, id: &str) -> Result<Plugin> {
-        let plugin = sqlx::query_as::<_, Plugin>("SELECT * FROM plugins WHERE id = ?")
+        let plugin = sqlx::query_as::<_, Plugin>(
+            r#"
+            SELECT id, name, version, plugin_type, description, author, plugin_path, entry_point,
+                   enabled, created_at, updated_at, metadata
+            FROM plugins
+            WHERE id = ?
+            "#,
+        )
             .bind(id)
             .fetch_optional(&self.pool)
             .await?
@@ -32,7 +46,14 @@ impl PluginRepository {
     }
 
     pub async fn get_by_name(&self, name: &str) -> Result<Plugin> {
-        let plugin = sqlx::query_as::<_, Plugin>("SELECT * FROM plugins WHERE name = ?")
+        let plugin = sqlx::query_as::<_, Plugin>(
+            r#"
+            SELECT id, name, version, plugin_type, description, author, plugin_path, entry_point,
+                   enabled, created_at, updated_at, metadata
+            FROM plugins
+            WHERE name = ?
+            "#,
+        )
             .bind(name)
             .fetch_optional(&self.pool)
             .await?
@@ -44,8 +65,8 @@ impl PluginRepository {
     pub async fn create(&self, plugin: &Plugin) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO plugins (id, name, version, plugin_type, description, author, code, entry_point, enabled, created_at, updated_at, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO plugins (id, name, version, plugin_type, description, author, code, plugin_path, entry_point, enabled, created_at, updated_at, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&plugin.id)
@@ -54,7 +75,8 @@ impl PluginRepository {
         .bind(plugin.plugin_type as i32)
         .bind(&plugin.description)
         .bind(&plugin.author)
-        .bind(&plugin.code)
+        .bind("")
+        .bind(&plugin.plugin_path)
         .bind(&plugin.entry_point)
         .bind(plugin.enabled)
         .bind(plugin.created_at)
@@ -70,7 +92,7 @@ impl PluginRepository {
         sqlx::query(
             r#"
             UPDATE plugins
-            SET name = ?, version = ?, plugin_type = ?, description = ?, author = ?, code = ?, entry_point = ?, enabled = ?, updated_at = ?, metadata = ?
+            SET name = ?, version = ?, plugin_type = ?, description = ?, author = ?, plugin_path = ?, entry_point = ?, enabled = ?, updated_at = ?, metadata = ?
             WHERE id = ?
             "#,
         )
@@ -79,7 +101,7 @@ impl PluginRepository {
         .bind(plugin.plugin_type as i32)
         .bind(&plugin.description)
         .bind(&plugin.author)
-        .bind(&plugin.code)
+        .bind(&plugin.plugin_path)
         .bind(&plugin.entry_point)
         .bind(plugin.enabled)
         .bind(Utc::now())

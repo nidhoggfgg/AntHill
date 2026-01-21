@@ -2,8 +2,7 @@ use super::PluginExecutor;
 use crate::error::{AppError, Result};
 use crate::models::Plugin;
 use std::collections::HashMap;
-use std::io::Write;
-use tempfile::NamedTempFile;
+use std::path::Path;
 
 #[derive(Clone)]
 pub struct NodeExecutor {
@@ -36,34 +35,20 @@ impl PluginExecutor for NodeExecutor {
         plugin: &Plugin,
         args: Vec<String>,
         env: HashMap<String, String>,
+        work_dir: &Path,
     ) -> Result<(u32, tokio::process::Child)> {
-        // Write plugin code to a temporary file
-        let temp_file = NamedTempFile::new()
-            .map_err(|e| AppError::Execution(format!("Failed to create temp file: {}", e)))?;
-
-        let extension = if plugin.entry_point.ends_with(".mjs") {
-            ".mjs"
-        } else {
-            ".js"
-        };
-
-        // Create a new temp file with the correct extension
-        let temp_path = temp_file.into_temp_path();
-        let file_path = temp_path.with_extension(extension);
-
-        let mut file = std::fs::File::create(&file_path)
-            .map_err(|e| AppError::Execution(format!("Failed to create temp file: {}", e)))?;
-
-        file.write_all(plugin.code.as_bytes())
-            .map_err(|e| AppError::Execution(format!("Failed to write code: {}", e)))?;
-
-        let file_str = file_path
-            .to_str()
-            .ok_or_else(|| AppError::Execution("Invalid temp file path".to_string()))?;
+        let script_path = Path::new(&plugin.plugin_path).join(&plugin.entry_point);
+        if !script_path.is_file() {
+            return Err(AppError::Execution(format!(
+                "Entry point not found: {}",
+                script_path.display()
+            )));
+        }
 
         // Build the command
         let mut cmd = tokio::process::Command::new(&self.node_path);
-        cmd.arg(file_str);
+        cmd.arg(&script_path);
+        cmd.current_dir(work_dir);
 
         for arg in args {
             cmd.arg(arg);

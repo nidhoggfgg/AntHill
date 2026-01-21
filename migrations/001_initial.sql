@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS plugins (
     description TEXT,
     author TEXT,
     code TEXT NOT NULL,
+    plugin_path TEXT NOT NULL,
     entry_point TEXT NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,

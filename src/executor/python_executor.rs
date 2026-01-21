@@ -2,8 +2,7 @@ use super::PluginExecutor;
 use crate::error::{AppError, Result};
 use crate::models::Plugin;
 use std::collections::HashMap;
-use std::io::Write;
-use tempfile::NamedTempFile;
+use std::path::Path;
 
 #[derive(Clone)]
 pub struct PythonExecutor {
@@ -36,29 +35,20 @@ impl PluginExecutor for PythonExecutor {
         plugin: &Plugin,
         args: Vec<String>,
         env: HashMap<String, String>,
+        work_dir: &Path,
     ) -> Result<(u32, tokio::process::Child)> {
-        // Write plugin code to a temporary file
-        let mut temp_file = NamedTempFile::new()
-            .map_err(|e| AppError::Execution(format!("Failed to create temp file: {}", e)))?;
-
-        temp_file
-            .write_all(plugin.code.as_bytes())
-            .map_err(|e| AppError::Execution(format!("Failed to write code: {}", e)))?;
-
-        let temp_path = temp_file
-            .path()
-            .to_str()
-            .ok_or_else(|| AppError::Execution("Invalid temp file path".to_string()))?
-            .to_string();
-
-        // Keep the temp file until the process completes
-        temp_file
-            .keep()
-            .map_err(|e| AppError::Execution(format!("Failed to keep temp file: {}", e)))?;
+        let script_path = Path::new(&plugin.plugin_path).join(&plugin.entry_point);
+        if !script_path.is_file() {
+            return Err(AppError::Execution(format!(
+                "Entry point not found: {}",
+                script_path.display()
+            )));
+        }
 
         // Build the command
         let mut cmd = tokio::process::Command::new(&self.python_path);
-        cmd.arg(temp_path);
+        cmd.arg(&script_path);
+        cmd.current_dir(work_dir);
 
         for arg in args {
             cmd.arg(arg);

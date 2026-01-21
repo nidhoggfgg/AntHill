@@ -42,7 +42,7 @@ pub async fn install_plugin(
             plugin_type,
             req.description,
             req.author,
-            req.code,
+            req.package_url,
             req.entry_point,
             req.metadata,
         )

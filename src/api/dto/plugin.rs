@@ -8,7 +8,7 @@ pub struct InstallPluginRequest {
     pub plugin_type: String,
     pub description: String,
     pub author: String,
-    pub code: String,
+    pub package_url: String,
     pub entry_point: String,
     pub metadata: Option<String>,
 }
