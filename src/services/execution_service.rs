@@ -1,6 +1,6 @@
 use crate::error::{AppError, Result};
 use crate::executor::{NodeExecutor, PluginExecutor, PythonExecutor};
-use crate::models::{Execution, ExecutionStatus};
+use crate::models::{Execution, ExecutionStatus, PluginParameter};
 use crate::repository::{ExecutionRepository, PluginRepository};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -28,6 +28,7 @@ impl ExecutionService {
         plugin_id: &str,
         args: Vec<String>,
         env: HashMap<String, String>,
+        params: HashMap<String, serde_json::Value>,
     ) -> Result<Execution> {
         // Get plugin
         let plugin = self.plugin_repo.get(plugin_id).await?;
@@ -41,6 +42,21 @@ impl ExecutionService {
 
         let work_dir = Self::work_dir_for(&execution.id)?;
         std::fs::create_dir_all(&work_dir)?;
+
+        let resolved_params = Self::resolve_parameters(&plugin.parameters, params)?;
+        let mut env = env;
+        if !resolved_params.is_empty() {
+            let params_json = serde_json::to_string(&resolved_params).map_err(|e| {
+                AppError::Execution(format!("Failed to serialize parameters: {}", e))
+            })?;
+            let params_path = work_dir.join("params.json");
+            std::fs::write(&params_path, params_json.as_bytes())?;
+            env.insert("ATOM_PLUGIN_PARAMS".to_string(), params_json);
+            env.insert(
+                "ATOM_PLUGIN_PARAMS_PATH".to_string(),
+                params_path.to_string_lossy().to_string(),
+            );
+        }
 
         // Select executor based on plugin type
         let exec_result = match plugin.plugin_type {
@@ -175,5 +191,89 @@ impl ExecutionService {
     fn work_dir_for(execution_id: &str) -> Result<PathBuf> {
         let base_dir = std::env::current_dir()?.join("workdir");
         Ok(Path::new(&base_dir).join(execution_id))
+    }
+
+    fn resolve_parameters(
+        raw_parameters: &Option<String>,
+        provided: HashMap<String, serde_json::Value>,
+    ) -> Result<HashMap<String, serde_json::Value>> {
+        let schema = Self::parse_parameters(raw_parameters)?;
+        if schema.is_empty() {
+            if provided.is_empty() {
+                return Ok(HashMap::new());
+            }
+            return Err(AppError::Execution(
+                "Plugin does not declare parameters".to_string(),
+            ));
+        }
+
+        let mut schema_map = HashMap::new();
+        for param in &schema {
+            let name = param.name.trim();
+            if name.is_empty() {
+                return Err(AppError::Execution(
+                    "Parameter name cannot be empty".to_string(),
+                ));
+            }
+            if name != param.name {
+                return Err(AppError::Execution(format!(
+                    "Parameter name has leading/trailing whitespace: {}",
+                    param.name
+                )));
+            }
+            if schema_map.insert(name.to_string(), param).is_some() {
+                return Err(AppError::Execution(format!(
+                    "Duplicate parameter name: {}",
+                    name
+                )));
+            }
+        }
+
+        let mut resolved = HashMap::new();
+        for (name, value) in provided {
+            let Some(schema_param) = schema_map.get(&name) else {
+                return Err(AppError::Execution(format!(
+                    "Unknown parameter: {}",
+                    name
+                )));
+            };
+            if !schema_param.param_type.matches(&value) {
+                return Err(AppError::Execution(format!(
+                    "Parameter '{}' does not match type {:?}",
+                    name, schema_param.param_type
+                )));
+            }
+            resolved.insert(name, value);
+        }
+
+        for param in &schema {
+            if resolved.contains_key(&param.name) {
+                continue;
+            }
+            if let Some(default) = &param.default {
+                resolved.insert(param.name.clone(), default.clone());
+            } else {
+                return Err(AppError::Execution(format!(
+                    "Missing required parameter: {}",
+                    param.name
+                )));
+            }
+        }
+
+        Ok(resolved)
+    }
+
+    fn parse_parameters(raw: &Option<String>) -> Result<Vec<PluginParameter>> {
+        let Some(raw) = raw else {
+            return Ok(Vec::new());
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
+        }
+        let parameters = serde_json::from_str(trimmed).map_err(|e| {
+            AppError::Execution(format!("Invalid plugin parameters: {}", e))
+        })?;
+        Ok(parameters)
     }
 }

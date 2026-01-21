@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::models::{Plugin, PluginType};
+use crate::models::{Plugin, PluginParameter, PluginType};
 use crate::repository::PluginRepository;
 use chrono::Utc;
 use std::fs;
@@ -40,6 +40,7 @@ impl PluginService {
         package_url: String,
         entry_point: String,
         metadata: Option<String>,
+        parameters: Option<Vec<PluginParameter>>,
     ) -> Result<Plugin> {
         // Check if plugin already exists
         if self.repo.get_by_name(&name).await.is_ok() {
@@ -56,6 +57,8 @@ impl PluginService {
         let plugin_dir = Self::plugin_dir_for(&plugin_id)?;
 
         fs::create_dir_all(&plugin_dir)?;
+
+        let parameters_json = Self::validate_parameters(parameters)?;
 
         if let Err(err) = self.download_and_extract(&package_url, &plugin_dir).await {
             let _ = fs::remove_dir_all(&plugin_dir);
@@ -85,6 +88,7 @@ impl PluginService {
             created_at: now,
             updated_at: now,
             metadata,
+            parameters: parameters_json,
         };
 
         self.repo.create(&plugin).await?;
@@ -184,5 +188,51 @@ impl PluginService {
             return Some(PathBuf::from(path));
         }
         None
+    }
+
+    fn validate_parameters(
+        parameters: Option<Vec<PluginParameter>>,
+    ) -> Result<Option<String>> {
+        let Some(parameters) = parameters else {
+            return Ok(None);
+        };
+
+        let mut seen = std::collections::HashSet::new();
+        for param in &parameters {
+            let name = param.name.trim();
+            if name.is_empty() {
+                return Err(crate::error::AppError::Execution(
+                    "Parameter name cannot be empty".to_string(),
+                ));
+            }
+            if name != param.name {
+                return Err(crate::error::AppError::Execution(format!(
+                    "Parameter name has leading/trailing whitespace: {}",
+                    param.name
+                )));
+            }
+            if !seen.insert(name.to_string()) {
+                return Err(crate::error::AppError::Execution(format!(
+                    "Duplicate parameter name: {}",
+                    name
+                )));
+            }
+            if let Some(default) = &param.default {
+                if !param.param_type.matches(default) {
+                    return Err(crate::error::AppError::Execution(format!(
+                        "Default value for parameter '{}' does not match type {:?}",
+                        name, param.param_type
+                    )));
+                }
+            }
+        }
+
+        let json = serde_json::to_string(&parameters).map_err(|e| {
+            crate::error::AppError::Execution(format!(
+                "Failed to serialize parameters: {}",
+                e
+            ))
+        })?;
+        Ok(Some(json))
     }
 }

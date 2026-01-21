@@ -13,10 +13,11 @@ pub async fn execute_plugin(
 ) -> Result<Json<ExecutionResponse>> {
     let args = req.args.unwrap_or_default();
     let env = req.env.unwrap_or_default();
+    let params = req.params.unwrap_or_default();
 
     let execution = state
         .execution_service
-        .execute_plugin(&plugin_id, args, env)
+        .execute_plugin(&plugin_id, args, env, params)
         .await?;
     Ok(Json(ExecutionResponse::from(execution)))
 }

@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS plugins (
     enabled BOOLEAN NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    metadata TEXT
+    metadata TEXT,
+    parameters TEXT
 );
 
 -- 执行记录表

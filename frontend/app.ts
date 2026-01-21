@@ -9,6 +9,7 @@ type Plugin = {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+  parameters?: PluginParameter[] | null;
 };
 
 type Execution = {
@@ -33,6 +34,13 @@ type HealthResponse = {
 type PluginsListResponse = { data: Plugin[] };
 type ExecutionsListResponse = { data: Execution[] };
 
+type PluginParameter = {
+  name: string;
+  type: "string" | "number" | "integer" | "boolean" | "json";
+  description?: string | null;
+  default?: unknown;
+};
+
 type InstallPluginRequest = {
   name: string;
   version: string;
@@ -42,11 +50,13 @@ type InstallPluginRequest = {
   package_url: string;
   entry_point: string;
   metadata?: string | null;
+  parameters?: PluginParameter[] | null;
 };
 
 type ExecutePluginRequest = {
   args?: string[];
   env?: Record<string, string>;
+  params?: Record<string, unknown>;
 };
 
 const dom = {

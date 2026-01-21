@@ -30,7 +30,8 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
             enabled BOOLEAN NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            metadata TEXT
+            metadata TEXT,
+            parameters TEXT
         );
 
         -- 执行记录表
@@ -59,6 +60,14 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     let _ = sqlx::query(
         r#"
         ALTER TABLE plugins ADD COLUMN plugin_path TEXT NOT NULL DEFAULT '';
+        "#,
+    )
+    .execute(&pool)
+    .await;
+
+    let _ = sqlx::query(
+        r#"
+        ALTER TABLE plugins ADD COLUMN parameters TEXT;
         "#,
     )
     .execute(&pool)

@@ -10,9 +10,11 @@ use axum::{
 
 pub async fn list_plugins(State(state): State<AppState>) -> Result<Json<PluginsListResponse>> {
     let plugins = state.plugin_service.list_plugins().await?;
-    let response = PluginsListResponse {
-        data: plugins.into_iter().map(PluginResponse::from).collect(),
-    };
+    let data = plugins
+        .into_iter()
+        .map(PluginResponse::try_from)
+        .collect::<Result<Vec<_>>>()?;
+    let response = PluginsListResponse { data };
     Ok(Json(response))
 }
 
@@ -21,7 +23,7 @@ pub async fn get_plugin(
     Path(id): Path<String>,
 ) -> Result<Json<PluginResponse>> {
     let plugin = state.plugin_service.get_plugin(&id).await?;
-    Ok(Json(PluginResponse::from(plugin)))
+    Ok(Json(PluginResponse::try_from(plugin)?))
 }
 
 pub async fn install_plugin(
@@ -45,10 +47,11 @@ pub async fn install_plugin(
             req.package_url,
             req.entry_point,
             req.metadata,
+            req.parameters,
         )
         .await?;
 
-    Ok((StatusCode::CREATED, Json(PluginResponse::from(plugin))))
+    Ok((StatusCode::CREATED, Json(PluginResponse::try_from(plugin)?)))
 }
 
 pub async fn uninstall_plugin(

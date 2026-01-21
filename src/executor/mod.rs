@@ -9,7 +9,7 @@ use crate::models::Plugin;
 use std::collections::HashMap;
 use std::path::Path;
 
-pub trait PluginExecutor {
+pub(crate) trait PluginExecutor {
     async fn execute(
         &self,
         plugin: &Plugin,

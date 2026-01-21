@@ -17,7 +17,7 @@ impl PluginRepository {
         let plugins = sqlx::query_as::<_, Plugin>(
             r#"
             SELECT id, name, version, plugin_type, description, author, plugin_path, entry_point,
-                   enabled, created_at, updated_at, metadata
+                   enabled, created_at, updated_at, metadata, parameters
             FROM plugins
             ORDER BY created_at DESC
             "#,
@@ -32,7 +32,7 @@ impl PluginRepository {
         let plugin = sqlx::query_as::<_, Plugin>(
             r#"
             SELECT id, name, version, plugin_type, description, author, plugin_path, entry_point,
-                   enabled, created_at, updated_at, metadata
+                   enabled, created_at, updated_at, metadata, parameters
             FROM plugins
             WHERE id = ?
             "#,
@@ -49,7 +49,7 @@ impl PluginRepository {
         let plugin = sqlx::query_as::<_, Plugin>(
             r#"
             SELECT id, name, version, plugin_type, description, author, plugin_path, entry_point,
-                   enabled, created_at, updated_at, metadata
+                   enabled, created_at, updated_at, metadata, parameters
             FROM plugins
             WHERE name = ?
             "#,
@@ -65,8 +65,8 @@ impl PluginRepository {
     pub async fn create(&self, plugin: &Plugin) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO plugins (id, name, version, plugin_type, description, author, code, plugin_path, entry_point, enabled, created_at, updated_at, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO plugins (id, name, version, plugin_type, description, author, code, plugin_path, entry_point, enabled, created_at, updated_at, metadata, parameters)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&plugin.id)
@@ -82,6 +82,7 @@ impl PluginRepository {
         .bind(plugin.created_at)
         .bind(plugin.updated_at)
         .bind(&plugin.metadata)
+        .bind(&plugin.parameters)
         .execute(&self.pool)
         .await?;
 
@@ -93,7 +94,7 @@ impl PluginRepository {
         sqlx::query(
             r#"
             UPDATE plugins
-            SET name = ?, version = ?, plugin_type = ?, description = ?, author = ?, plugin_path = ?, entry_point = ?, enabled = ?, updated_at = ?, metadata = ?
+            SET name = ?, version = ?, plugin_type = ?, description = ?, author = ?, plugin_path = ?, entry_point = ?, enabled = ?, updated_at = ?, metadata = ?, parameters = ?
             WHERE id = ?
             "#,
         )
@@ -107,6 +108,7 @@ impl PluginRepository {
         .bind(plugin.enabled)
         .bind(Utc::now())
         .bind(&plugin.metadata)
+        .bind(&plugin.parameters)
         .bind(&plugin.id)
         .execute(&self.pool)
         .await?;

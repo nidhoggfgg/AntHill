@@ -1,4 +1,5 @@
-use crate::models::Plugin;
+use crate::error::AppError;
+use crate::models::{Plugin, PluginParameter};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -11,6 +12,7 @@ pub struct InstallPluginRequest {
     pub package_url: String,
     pub entry_point: String,
     pub metadata: Option<String>,
+    pub parameters: Option<Vec<PluginParameter>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -25,11 +27,15 @@ pub struct PluginResponse {
     pub enabled: bool,
     pub created_at: String,
     pub updated_at: String,
+    pub parameters: Option<Vec<PluginParameter>>,
 }
 
-impl From<Plugin> for PluginResponse {
-    fn from(plugin: Plugin) -> Self {
-        Self {
+impl TryFrom<Plugin> for PluginResponse {
+    type Error = AppError;
+
+    fn try_from(plugin: Plugin) -> Result<Self, Self::Error> {
+        let parameters = parse_parameters(&plugin.parameters)?;
+        Ok(Self {
             id: plugin.id,
             name: plugin.name,
             version: plugin.version,
@@ -40,8 +46,22 @@ impl From<Plugin> for PluginResponse {
             enabled: plugin.enabled,
             created_at: plugin.created_at.to_rfc3339(),
             updated_at: plugin.updated_at.to_rfc3339(),
-        }
+            parameters,
+        })
     }
+}
+
+fn parse_parameters(raw: &Option<String>) -> Result<Option<Vec<PluginParameter>>, AppError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let parameters = serde_json::from_str(trimmed)
+        .map_err(|e| AppError::Execution(format!("Invalid plugin parameters: {}", e)))?;
+    Ok(Some(parameters))
 }
 
 #[derive(Debug, Serialize)]
