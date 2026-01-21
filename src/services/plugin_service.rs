@@ -25,6 +25,7 @@ impl PluginService {
         self.repo.get(id).await
     }
 
+    #[allow(unused)]
     pub async fn get_plugin_by_name(&self, name: &str) -> Result<Plugin> {
         self.repo.get_by_name(name).await
     }
@@ -41,7 +42,7 @@ impl PluginService {
         metadata: Option<String>,
     ) -> Result<Plugin> {
         // Check if plugin already exists
-        if let Ok(_) = self.repo.get_by_name(&name).await {
+        if self.repo.get_by_name(&name).await.is_ok() {
             return Err(crate::error::AppError::PluginAlreadyExists(name));
         }
 
@@ -56,10 +57,7 @@ impl PluginService {
 
         fs::create_dir_all(&plugin_dir)?;
 
-        if let Err(err) = self
-            .download_and_extract(&package_url, &plugin_dir)
-            .await
-        {
+        if let Err(err) = self.download_and_extract(&package_url, &plugin_dir).await {
             let _ = fs::remove_dir_all(&plugin_dir);
             return Err(err);
         }

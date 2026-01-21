@@ -37,10 +37,10 @@ impl PluginRepository {
             WHERE id = ?
             "#,
         )
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| AppError::PluginNotFound(id.to_string()))?;
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::PluginNotFound(id.to_string()))?;
 
         Ok(plugin)
     }
@@ -54,10 +54,10 @@ impl PluginRepository {
             WHERE name = ?
             "#,
         )
-            .bind(name)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| AppError::PluginNotFound(name.to_string()))?;
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::PluginNotFound(name.to_string()))?;
 
         Ok(plugin)
     }
@@ -88,6 +88,7 @@ impl PluginRepository {
         Ok(())
     }
 
+    #[allow(unused)]
     pub async fn update(&self, plugin: &Plugin) -> Result<()> {
         sqlx::query(
             r#"

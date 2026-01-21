@@ -12,13 +12,7 @@ pub struct NodeExecutor {
 impl NodeExecutor {
     pub fn new(node_path: Option<String>) -> Self {
         Self {
-            node_path: node_path.unwrap_or_else(|| {
-                if cfg!(target_os = "windows") {
-                    "node".to_string()
-                } else {
-                    "node".to_string()
-                }
-            }),
+            node_path: node_path.unwrap_or_else(|| "node".to_string()),
         }
     }
 }

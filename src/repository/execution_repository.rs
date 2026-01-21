@@ -123,13 +123,4 @@ impl ExecutionRepository {
 
         Ok(())
     }
-
-    pub async fn delete(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM executions WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
-    }
 }
