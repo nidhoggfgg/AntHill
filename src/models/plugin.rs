@@ -13,10 +13,10 @@ pub struct Plugin {
     pub plugin_path: String,
     pub entry_point: String,
     pub enabled: bool,
+    pub parameters: Option<String>,
+    pub metadata: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub metadata: Option<String>,
-    pub parameters: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type, PartialEq)]

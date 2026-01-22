@@ -3,6 +3,7 @@ mod config;
 mod error;
 mod executor;
 mod models;
+mod paths;
 mod repository;
 mod services;
 
@@ -26,8 +27,15 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // Load configuration
-    let config = Config::from_env();
+    let config = Config::from_env()?;
     tracing::info!("Starting atom_node with config: {:?}", config);
+
+    if let Some(path) = config.database_url.strip_prefix("sqlite:") {
+        let path = std::path::Path::new(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
 
     // Establish database connection
     let db_pool = establish_connection(&config.database_url).await?;

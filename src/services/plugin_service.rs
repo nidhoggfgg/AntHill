@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::models::{Plugin, PluginParameter, PluginType};
 use crate::repository::PluginRepository;
+use crate::paths;
 use chrono::Utc;
 use std::fs;
 use std::io::{Cursor, Read, Write};
@@ -52,6 +53,7 @@ impl PluginService {
                 "Entry point cannot be empty".to_string(),
             ));
         }
+        Self::validate_entry_point(&entry_point)?;
 
         let plugin_id = Uuid::new_v4().to_string();
         let plugin_dir = Self::plugin_dir_for(&plugin_id)?;
@@ -116,7 +118,7 @@ impl PluginService {
     }
 
     fn plugin_dir_for(plugin_id: &str) -> Result<PathBuf> {
-        let base_dir = std::env::current_dir()?.join("plugins");
+        let base_dir = paths::plugins_dir()?;
         Ok(base_dir.join(plugin_id))
     }
 
@@ -188,6 +190,24 @@ impl PluginService {
             return Some(PathBuf::from(path));
         }
         None
+    }
+
+    fn validate_entry_point(entry_point: &str) -> Result<()> {
+        let path = Path::new(entry_point);
+        if path.is_absolute() {
+            return Err(crate::error::AppError::Execution(
+                "Entry point must be a relative path".to_string(),
+            ));
+        }
+        if path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(crate::error::AppError::Execution(
+                "Entry point cannot contain '..'".to_string(),
+            ));
+        }
+        Ok(())
     }
 
     fn validate_parameters(

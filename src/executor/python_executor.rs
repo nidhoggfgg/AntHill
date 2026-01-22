@@ -13,11 +13,7 @@ impl PythonExecutor {
     pub fn new(python_path: Option<String>) -> Self {
         Self {
             python_path: python_path.unwrap_or_else(|| {
-                if cfg!(target_os = "windows") {
-                    "python".to_string()
-                } else {
-                    "python3".to_string()
-                }
+                "python3".to_string()
             }),
         }
     }

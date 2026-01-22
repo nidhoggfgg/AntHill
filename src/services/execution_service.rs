@@ -2,8 +2,9 @@ use crate::error::{AppError, Result};
 use crate::executor::{NodeExecutor, PluginExecutor, PythonExecutor};
 use crate::models::{Execution, ExecutionStatus, PluginParameter};
 use crate::repository::{ExecutionRepository, PluginRepository};
+use crate::paths;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct ExecutionService {
@@ -49,13 +50,7 @@ impl ExecutionService {
             let params_json = serde_json::to_string(&resolved_params).map_err(|e| {
                 AppError::Execution(format!("Failed to serialize parameters: {}", e))
             })?;
-            let params_path = work_dir.join("params.json");
-            std::fs::write(&params_path, params_json.as_bytes())?;
             env.insert("ATOM_PLUGIN_PARAMS".to_string(), params_json);
-            env.insert(
-                "ATOM_PLUGIN_PARAMS_PATH".to_string(),
-                params_path.to_string_lossy().to_string(),
-            );
         }
 
         // Select executor based on plugin type
@@ -189,8 +184,8 @@ impl ExecutionService {
     }
 
     fn work_dir_for(execution_id: &str) -> Result<PathBuf> {
-        let base_dir = std::env::current_dir()?.join("workdir");
-        Ok(Path::new(&base_dir).join(execution_id))
+        let base_dir = paths::work_dir()?;
+        Ok(base_dir.join(execution_id))
     }
 
     fn resolve_parameters(
