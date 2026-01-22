@@ -1,12 +1,37 @@
-use crate::error::Result;
-use crate::models::{Plugin, PluginParameter, PluginType, PythonDependencies};
+use crate::error::{AppError, Result};
+use crate::models::{
+    Plugin, PluginParameter, PluginType, PythonDependencies, PythonDependenciesRequest,
+};
 use crate::repository::PluginRepository;
 use crate::paths;
 use chrono::Utc;
+use serde::Deserialize;
+use serde_json::Value;
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+#[derive(Debug, Deserialize)]
+struct MetadataInstallPlugin {
+    name: String,
+    version: String,
+    plugin_type: String,
+    description: String,
+    author: String,
+    package_url: String,
+    entry_point: String,
+    metadata: Option<Value>,
+    parameters: Option<Vec<PluginParameter>>,
+    python_dependencies: Option<PythonDependenciesRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum MetadataPayload {
+    Multi { install_plugins: Vec<MetadataInstallPlugin> },
+    Single(MetadataInstallPlugin),
+}
 
 #[derive(Clone)]
 pub struct PluginService {
@@ -42,7 +67,7 @@ impl PluginService {
         entry_point: String,
         metadata: Option<String>,
         parameters: Option<Vec<PluginParameter>>,
-        python_dependencies: Option<Vec<String>>,
+        python_dependencies: Option<PythonDependenciesRequest>,
     ) -> Result<Plugin> {
         // Check if plugin already exists
         if self.repo.get_by_name(&name).await.is_ok() {
@@ -63,7 +88,7 @@ impl PluginService {
 
         let parameters_json = Self::validate_parameters(parameters)?;
         let python_dependencies =
-            Self::validate_python_dependencies(plugin_type, python_dependencies)?;
+            Self::normalize_python_dependencies(plugin_type, python_dependencies)?;
 
         if let Err(err) = self.download_and_extract(&package_url, &plugin_dir).await {
             let _ = fs::remove_dir_all(&plugin_dir);
@@ -83,8 +108,8 @@ impl PluginService {
         let mut python_dependencies_json = None;
         if plugin_type == PluginType::Python {
             let venv_dir = Self::python_env_dir_for(&plugin_id)?;
-            let resolved_deps = match Self::resolve_python_dependencies(&plugin_dir, python_dependencies)
-            {
+            let resolved_deps =
+                match Self::resolve_python_dependencies(&plugin_dir, python_dependencies) {
                 Ok(deps) => deps,
                 Err(err) => {
                     let _ = fs::remove_dir_all(&plugin_dir);
@@ -142,6 +167,48 @@ impl PluginService {
         Ok(plugin)
     }
 
+    pub async fn install_from_metadata_url(&self, metadata_url: &str) -> Result<Vec<Plugin>> {
+        let bytes = Self::fetch_bytes(metadata_url, "metadata").await?;
+        let payload: MetadataPayload = serde_json::from_slice(&bytes).map_err(|e| {
+            AppError::Execution(format!("Invalid metadata JSON: {}", e))
+        })?;
+
+        let mut specs = match payload {
+            MetadataPayload::Single(spec) => vec![spec],
+            MetadataPayload::Multi { install_plugins } => install_plugins,
+        };
+
+        if specs.is_empty() {
+            return Err(AppError::Execution(
+                "Metadata file did not contain any install_plugins entries".to_string(),
+            ));
+        }
+
+        let mut plugins = Vec::with_capacity(specs.len());
+        for spec in specs.drain(..) {
+            let plugin_type = Self::parse_plugin_type(&spec.plugin_type)?;
+            let metadata = spec.metadata.map(Self::stringify_metadata);
+            let package_url = Self::resolve_package_url(metadata_url, &spec.package_url);
+            let plugin = self
+                .install_plugin(
+                    spec.name,
+                    spec.version,
+                    plugin_type,
+                    spec.description,
+                    spec.author,
+                    package_url,
+                    spec.entry_point,
+                    metadata,
+                    spec.parameters,
+                    spec.python_dependencies,
+                )
+                .await?;
+            plugins.push(plugin);
+        }
+
+        Ok(plugins)
+    }
+
     pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
         let plugin = self.repo.get(id).await?;
         if !plugin.plugin_path.is_empty() {
@@ -177,28 +244,7 @@ impl PluginService {
     }
 
     async fn download_and_extract(&self, url: &str, target_dir: &Path) -> Result<()> {
-        if let Some(path) = Self::local_path_from_url(url) {
-            let bytes = fs::read(&path).map_err(|e| {
-                crate::error::AppError::Execution(format!(
-                    "Failed to read local package {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?;
-            return Self::extract_zip(&bytes, target_dir);
-        }
-
-        let response = reqwest::get(url).await.map_err(|e| {
-            crate::error::AppError::Execution(format!("Failed to download package: {}", e))
-        })?;
-        let response = response.error_for_status().map_err(|e| {
-            crate::error::AppError::Execution(format!("Failed to download package: {}", e))
-        })?;
-
-        let bytes = response.bytes().await.map_err(|e| {
-            crate::error::AppError::Execution(format!("Failed to read package bytes: {}", e))
-        })?;
-
+        let bytes = Self::fetch_bytes(url, "package").await?;
         Self::extract_zip(&bytes, target_dir)
     }
 
@@ -238,12 +284,94 @@ impl PluginService {
         Ok(())
     }
 
+    async fn fetch_bytes(url: &str, label: &str) -> Result<Vec<u8>> {
+        if let Some(path) = Self::resolve_local_path(url) {
+            let bytes = fs::read(&path).map_err(|e| {
+                AppError::Execution(format!(
+                    "Failed to read local {} {}: {}",
+                    label,
+                    path.display(),
+                    e
+                ))
+            })?;
+            return Ok(bytes);
+        }
+
+        let response = reqwest::get(url).await.map_err(|e| {
+            AppError::Execution(format!("Failed to download {}: {}", label, e))
+        })?;
+        let response = response.error_for_status().map_err(|e| {
+            AppError::Execution(format!("Failed to download {}: {}", label, e))
+        })?;
+
+        let bytes = response.bytes().await.map_err(|e| {
+            AppError::Execution(format!("Failed to read {} bytes: {}", label, e))
+        })?;
+
+        Ok(bytes.to_vec())
+    }
+
     fn local_path_from_url(url: &str) -> Option<PathBuf> {
         if let Some(path) = url.strip_prefix("file://") {
             let path = path.strip_prefix("localhost/").unwrap_or(path);
             return Some(PathBuf::from(path));
         }
         None
+    }
+
+    fn resolve_local_path(url: &str) -> Option<PathBuf> {
+        if let Some(path) = Self::local_path_from_url(url) {
+            return Some(path);
+        }
+
+        if url.starts_with("http://") || url.starts_with("https://") {
+            return None;
+        }
+
+        Some(PathBuf::from(url))
+    }
+
+    fn resolve_package_url(metadata_url: &str, package_url: &str) -> String {
+        if package_url.starts_with("http://")
+            || package_url.starts_with("https://")
+            || package_url.starts_with("file://")
+        {
+            return package_url.to_string();
+        }
+
+        let path = Path::new(package_url);
+        if path.is_absolute() {
+            return package_url.to_string();
+        }
+
+        if let Some(local_metadata) = Self::resolve_local_path(metadata_url) {
+            if let Some(parent) = local_metadata.parent() {
+                return parent.join(package_url).to_string_lossy().to_string();
+            }
+        }
+
+        if let Ok(base_url) = reqwest::Url::parse(metadata_url) {
+            if let Ok(joined) = base_url.join(package_url) {
+                return joined.to_string();
+            }
+        }
+
+        package_url.to_string()
+    }
+
+    fn parse_plugin_type(raw: &str) -> Result<PluginType> {
+        match raw {
+            "python" => Ok(PluginType::Python),
+            "javascript" | "js" => Ok(PluginType::JavaScript),
+            _ => Err(AppError::InvalidPluginType),
+        }
+    }
+
+    fn stringify_metadata(value: Value) -> String {
+        match value {
+            Value::String(s) => s,
+            other => other.to_string(),
+        }
     }
 
     fn validate_entry_point(entry_point: &str) -> Result<()> {
@@ -269,10 +397,10 @@ impl PluginService {
         Ok(base_dir.join(plugin_id))
     }
 
-    fn validate_python_dependencies(
+    fn normalize_python_dependencies(
         plugin_type: PluginType,
-        dependencies: Option<Vec<String>>,
-    ) -> Result<Option<Vec<String>>> {
+        dependencies: Option<PythonDependenciesRequest>,
+    ) -> Result<Option<PythonDependencies>> {
         if plugin_type != PluginType::Python {
             if dependencies.is_some() {
                 return Err(crate::error::AppError::Execution(
@@ -286,33 +414,45 @@ impl PluginService {
             return Ok(None);
         };
 
-        let mut seen = std::collections::HashSet::new();
-        let mut normalized = Vec::new();
-        for dep in dependencies {
-            let trimmed = dep.trim();
-            if trimmed.is_empty() {
-                return Err(crate::error::AppError::Execution(
-                    "Python dependency cannot be empty".to_string(),
-                ));
+        match dependencies {
+            PythonDependenciesRequest::Inline(items) => {
+                Self::normalize_inline_dependencies(items)
             }
-            if seen.insert(trimmed.to_string()) {
-                normalized.push(trimmed.to_string());
-            }
+            PythonDependenciesRequest::Spec(spec) => match spec {
+                PythonDependencies::Inline { items } => {
+                    Self::normalize_inline_dependencies(items)
+                }
+                PythonDependencies::Requirements { path } => {
+                    Self::validate_dependency_path(&path, "Requirements")?;
+                    Ok(Some(PythonDependencies::Requirements { path }))
+                }
+                PythonDependencies::Pyproject { path } => {
+                    Self::validate_dependency_path(&path, "Pyproject")?;
+                    Ok(Some(PythonDependencies::Pyproject { path }))
+                }
+            },
         }
-
-        if normalized.is_empty() {
-            return Ok(None);
-        }
-
-        Ok(Some(normalized))
     }
 
     fn resolve_python_dependencies(
         plugin_dir: &Path,
-        inline: Option<Vec<String>>,
+        dependencies: Option<PythonDependencies>,
     ) -> Result<Option<PythonDependencies>> {
-        if let Some(items) = inline {
-            return Ok(Some(PythonDependencies::Inline { items }));
+        if let Some(dependencies) = dependencies {
+            match &dependencies {
+                PythonDependencies::Requirements { path }
+                | PythonDependencies::Pyproject { path } => {
+                    let dep_path = plugin_dir.join(path);
+                    if !dep_path.is_file() {
+                        return Err(crate::error::AppError::Execution(format!(
+                            "Dependency file not found: {}",
+                            dep_path.display()
+                        )));
+                    }
+                }
+                PythonDependencies::Inline { items: _ } => {}
+            }
+            return Ok(Some(dependencies));
         }
 
         let requirements = plugin_dir.join("requirements.txt");
@@ -478,5 +618,57 @@ impl PluginService {
             ))
         })?;
         Ok(Some(json))
+    }
+
+    fn normalize_inline_dependencies(
+        dependencies: Vec<String>,
+    ) -> Result<Option<PythonDependencies>> {
+        let mut seen = std::collections::HashSet::new();
+        let mut normalized = Vec::new();
+        for dep in dependencies {
+            let trimmed = dep.trim();
+            if trimmed.is_empty() {
+                return Err(crate::error::AppError::Execution(
+                    "Python dependency cannot be empty".to_string(),
+                ));
+            }
+            if seen.insert(trimmed.to_string()) {
+                normalized.push(trimmed.to_string());
+            }
+        }
+
+        if normalized.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(PythonDependencies::Inline { items: normalized }))
+    }
+
+    fn validate_dependency_path(path: &str, label: &str) -> Result<()> {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            return Err(crate::error::AppError::Execution(format!(
+                "{} path cannot be empty",
+                label
+            )));
+        }
+
+        let path = Path::new(trimmed);
+        if path.is_absolute() {
+            return Err(crate::error::AppError::Execution(format!(
+                "{} path must be a relative path",
+                label
+            )));
+        }
+        if path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(crate::error::AppError::Execution(format!(
+                "{} path cannot contain '..'",
+                label
+            )));
+        }
+        Ok(())
     }
 }

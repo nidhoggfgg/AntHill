@@ -1,4 +1,6 @@
-use crate::api::dto::plugin::{InstallPluginRequest, PluginResponse, PluginsListResponse};
+use crate::api::dto::plugin::{
+    InstallPluginFromMetadataRequest, InstallPluginRequest, PluginResponse, PluginsListResponse,
+};
 use crate::api::routes::AppState;
 use crate::error::Result;
 use crate::models::PluginType;
@@ -53,6 +55,21 @@ pub async fn install_plugin(
         .await?;
 
     Ok((StatusCode::CREATED, Json(PluginResponse::try_from(plugin)?)))
+}
+
+pub async fn install_plugins_from_metadata(
+    State(state): State<AppState>,
+    Json(req): Json<InstallPluginFromMetadataRequest>,
+) -> Result<(StatusCode, Json<PluginsListResponse>)> {
+    let plugins = state
+        .plugin_service
+        .install_from_metadata_url(&req.metadata_url)
+        .await?;
+    let data = plugins
+        .into_iter()
+        .map(PluginResponse::try_from)
+        .collect::<Result<Vec<_>>>()?;
+    Ok((StatusCode::CREATED, Json(PluginsListResponse { data })))
 }
 
 pub async fn uninstall_plugin(

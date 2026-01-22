@@ -66,3 +66,10 @@ pub enum PythonDependencies {
     Requirements { path: String },
     Pyproject { path: String },
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PythonDependenciesRequest {
+    Inline(Vec<String>),
+    Spec(PythonDependencies),
+}

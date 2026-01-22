@@ -1,5 +1,7 @@
 use crate::error::AppError;
-use crate::models::{Plugin, PluginParameter, PythonDependencies};
+use crate::models::{
+    Plugin, PluginParameter, PythonDependencies, PythonDependenciesRequest,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -13,7 +15,12 @@ pub struct InstallPluginRequest {
     pub entry_point: String,
     pub metadata: Option<String>,
     pub parameters: Option<Vec<PluginParameter>>,
-    pub python_dependencies: Option<Vec<String>>,
+    pub python_dependencies: Option<PythonDependenciesRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InstallPluginFromMetadataRequest {
+    pub metadata_url: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -17,7 +17,7 @@ impl Default for Config {
         Self {
             database_url,
             host: "0.0.0.0".to_string(),
-            port: 3000,
+            port: 6701,
         }
     }
 }
@@ -39,7 +39,7 @@ impl Config {
         }
 
         if let Ok(port) = std::env::var("PORT") {
-            config.port = port.parse().unwrap_or(3000);
+            config.port = port.parse().unwrap_or(6701);
         }
 
         config.normalize_database_url()?;
