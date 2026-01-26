@@ -55,10 +55,15 @@ const dom = {
   connectionStatus: document.querySelector<HTMLButtonElement>("#connection-status")!,
   statusDot: document.querySelector<HTMLElement>("#status-dot")!,
   statusText: document.querySelector<HTMLElement>("#status-text")!,
+  connectionState: document.querySelector<HTMLElement>("#connection-state")!,
   btnInstallPlugin: document.querySelector<HTMLButtonElement>("#btn-install-plugin")!,
   pluginSearch: document.querySelector<HTMLInputElement>("#plugin-search")!,
   pluginList: document.querySelector<HTMLElement>("#plugin-list")!,
+  pluginCount: document.querySelector<HTMLElement>("#plugin-count")!,
   pluginDetail: document.querySelector<HTMLElement>("#plugin-detail")!,
+  pluginModal: document.querySelector<HTMLElement>("#plugin-modal")!,
+  pluginModalTitle: document.querySelector<HTMLElement>("#plugin-modal-title")!,
+  pluginModalMeta: document.querySelector<HTMLElement>("#plugin-modal-meta")!,
   installForm: document.querySelector<HTMLFormElement>("#install-form")!,
   notice: document.querySelector<HTMLElement>("#notice")!,
   connectionModal: document.querySelector<HTMLElement>("#connection-modal")!,
@@ -176,9 +181,11 @@ function updateConnectionState(connected: boolean) {
   if (connected) {
     dom.connectionStatus.classList.add("connected");
     dom.statusText.textContent = "Connected";
+    dom.connectionState.textContent = "Online";
   } else {
     dom.connectionStatus.classList.remove("connected");
     dom.statusText.textContent = "Not Connected";
+    dom.connectionState.textContent = "Offline";
   }
 }
 
@@ -188,6 +195,10 @@ function openModal(modal: HTMLElement) {
 
 function closeModal(modal: HTMLElement) {
   modal.classList.remove("active");
+  if (modal === dom.pluginModal) {
+    state.selectedPlugin = null;
+    renderPluginList();
+  }
 }
 
 async function connect() {
@@ -259,9 +270,17 @@ function renderPluginList() {
 
   dom.pluginList.innerHTML = "";
 
+  const total = state.plugins.length;
+  const shown = plugins.length;
+  if (state.filterText) {
+    dom.pluginCount.textContent = `${shown} / ${total}`;
+  } else {
+    dom.pluginCount.textContent = `${total}`;
+  }
+
   if (plugins.length === 0) {
     dom.pluginList.innerHTML = `
-      <div class="empty-state">
+      <div class="empty-state empty-state--wide">
         <p>${state.filterText ? "No plugins match your search." : "No plugins installed yet."}</p>
       </div>
     `;
@@ -298,26 +317,22 @@ function renderPluginDetail(plugin: Plugin) {
   const toggleAction = plugin.enabled ? "disable" : "enable";
   const toggleLabel = plugin.enabled ? "Disable" : "Enable";
 
+  dom.pluginModalTitle.textContent = plugin.name;
+  dom.pluginModalMeta.innerHTML = `
+    <span>Version: ${escapeHtml(plugin.version)}</span>
+    <span>Type: ${escapeHtml(plugin.plugin_type)}</span>
+    <span>Author: ${escapeHtml(plugin.author || "Unknown")}</span>
+    ${enabledBadge}
+  `;
+
   dom.pluginDetail.innerHTML = `
-    <div class="plugin-detail__header">
-      <div class="plugin-detail__title-row">
-        <h2 class="plugin-detail__name">${escapeHtml(plugin.name)}</h2>
-        <div class="plugin-detail__actions">
-          ${enabledBadge}
-        </div>
-      </div>
+    <div class="plugin-detail__section">
+      <h3 class="plugin-detail__section-title">Overview</h3>
+      <p class="plugin-detail__description">${escapeHtml(plugin.description || "No description provided.")}</p>
       <div class="plugin-detail__meta">
-        <span>Version: ${escapeHtml(plugin.version)}</span>
-        <span>Type: ${escapeHtml(plugin.plugin_type)}</span>
-        <span>Author: ${escapeHtml(plugin.author || "Unknown")}</span>
         <span>Entry: ${escapeHtml(plugin.entry_point)}</span>
         <span>Updated: ${formatTimestamp(plugin.updated_at)}</span>
       </div>
-    </div>
-
-    <div class="plugin-detail__section">
-      <h3 class="plugin-detail__section-title">Description</h3>
-      <p class="plugin-detail__description">${escapeHtml(plugin.description || "No description provided.")}</p>
     </div>
 
     <div class="plugin-detail__section">
@@ -466,17 +481,26 @@ function buildPluginCard(plugin: Plugin) {
   card.innerHTML = `
     <div class="plugin-card__header">
       <div>
+        <div class="plugin-card__eyebrow">${escapeHtml(plugin.plugin_type)}</div>
         <h3 class="plugin-card__title">${escapeHtml(plugin.name)}</h3>
-        <div class="plugin-card__meta">${escapeHtml(plugin.version)} • ${escapeHtml(plugin.plugin_type)}</div>
+        <div class="plugin-card__meta">v${escapeHtml(plugin.version)} • ${escapeHtml(plugin.author || "Unknown")}</div>
       </div>
       ${enabledBadge}
     </div>
     <p class="plugin-card__desc">${escapeHtml(plugin.description || "No description provided.")}</p>
     <div class="plugin-card__footer">
-      <span>${escapeHtml(plugin.author || "Unknown")}</span>
-      <span>${formatTimestamp(plugin.updated_at)}</span>
+      <span>Updated ${formatTimestamp(plugin.updated_at)}</span>
+      <button class="btn btn--primary btn--small" type="button" data-action="open">Run</button>
     </div>
   `;
+
+  const openBtn = card.querySelector<HTMLButtonElement>('button[data-action="open"]');
+  if (openBtn) {
+    openBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectPlugin(plugin.id);
+    });
+  }
 
   card.addEventListener("click", () => selectPlugin(plugin.id));
 
@@ -530,6 +554,7 @@ function selectPlugin(pluginId: string) {
   state.selectedPlugin = plugin;
   renderPluginList();
   renderPluginDetail(plugin);
+  openModal(dom.pluginModal);
   loadExecutions();
 }
 
@@ -614,6 +639,11 @@ async function handlePluginAction(action: string, pluginId: string) {
     try {
       await api.updatePlugin(pluginId);
       await loadPlugins();
+      const updatedPlugin = state.plugins.find((plugin) => plugin.id === pluginId) || null;
+      state.selectedPlugin = updatedPlugin;
+      if (updatedPlugin) {
+        renderPluginDetail(updatedPlugin);
+      }
       notify("Plugin updated successfully.", "success");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Failed to update plugin.";
@@ -631,8 +661,10 @@ async function handlePluginAction(action: string, pluginId: string) {
         await api.disablePlugin(pluginId);
       }
       await loadPlugins();
-      if (state.selectedPlugin?.id === pluginId) {
-        renderPluginDetail(state.selectedPlugin);
+      const updatedPlugin = state.plugins.find((plugin) => plugin.id === pluginId) || null;
+      state.selectedPlugin = updatedPlugin;
+      if (updatedPlugin) {
+        renderPluginDetail(updatedPlugin);
       }
       notify(message, "success");
     } catch (error) {
@@ -650,11 +682,7 @@ async function handlePluginAction(action: string, pluginId: string) {
       await api.uninstallPlugin(pluginId);
       state.selectedPlugin = null;
       await loadPlugins();
-      dom.pluginDetail.innerHTML = `
-        <div class="empty-state">
-          <p>Select a plugin from the sidebar to view details and run it.</p>
-        </div>
-      `;
+      closeModal(dom.pluginModal);
       notify("Plugin uninstalled.", "success");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Failed to uninstall plugin.";

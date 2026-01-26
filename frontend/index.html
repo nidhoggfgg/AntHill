@@ -32,22 +32,35 @@
         </div>
       </header>
 
-      <div class="main">
-        <aside class="sidebar">
-          <div class="sidebar__search">
-            <input type="text" id="plugin-search" placeholder="Search plugins..." />
+      <main class="main">
+        <section class="hero">
+          <div class="hero__copy">
+            <p class="hero__eyebrow">Plugin Library</p>
+            <h2 class="hero__title">Run plugins with a single click.</h2>
+            <p class="hero__subtitle">
+              Browse installed plugins, open a card, and launch workflows from the same place.
+            </p>
           </div>
-          <div class="sidebar__plugins" id="plugin-list"></div>
-        </aside>
-
-        <main class="content">
-          <div id="plugin-detail" class="plugin-detail">
-            <div class="empty-state">
-              <p>Select a plugin from the sidebar to view details and run it.</p>
+          <div class="hero__panel">
+            <label class="search-field">
+              <span>Search plugins</span>
+              <input type="text" id="plugin-search" placeholder="Type a name, author, or tag..." />
+            </label>
+            <div class="hero__stats">
+              <div class="stat-card">
+                <span>Installed</span>
+                <strong id="plugin-count">0</strong>
+              </div>
+              <div class="stat-card">
+                <span>Status</span>
+                <strong id="connection-state">Offline</strong>
+              </div>
             </div>
           </div>
-        </main>
-      </div>
+        </section>
+
+        <section class="plugin-grid" id="plugin-list"></section>
+      </main>
     </div>
 
     <div class="modal" id="connection-modal">
@@ -97,6 +110,23 @@
             <button class="btn btn--primary" type="submit">Install</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div class="modal" id="plugin-modal">
+      <div class="modal__backdrop"></div>
+      <div class="modal__content modal__content--wide">
+        <div class="modal__header modal__header--stacked">
+          <div>
+            <p class="modal__eyebrow">Plugin Runner</p>
+            <h2 id="plugin-modal-title">Plugin</h2>
+            <div id="plugin-modal-meta" class="plugin-modal__meta"></div>
+          </div>
+          <button class="btn btn--ghost" type="button" data-modal="close">×</button>
+        </div>
+        <div class="modal__body">
+          <div id="plugin-detail" class="plugin-detail"></div>
+        </div>
       </div>
     </div>
 
