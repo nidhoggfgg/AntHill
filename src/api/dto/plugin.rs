@@ -17,8 +17,8 @@ pub struct PluginResponse {
     pub author: String,
     pub entry_point: String,
     pub enabled: bool,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: i64,
+    pub updated_at: i64,
     pub parameters: Option<Vec<PluginParameter>>,
     pub python_dependencies: Option<PythonDependencies>,
 }
@@ -38,8 +38,8 @@ impl TryFrom<Plugin> for PluginResponse {
             author: plugin.author,
             entry_point: plugin.entry_point,
             enabled: plugin.enabled,
-            created_at: plugin.created_at.to_rfc3339(),
-            updated_at: plugin.updated_at.to_rfc3339(),
+            created_at: plugin.created_at,
+            updated_at: plugin.updated_at,
             parameters,
             python_dependencies,
         })

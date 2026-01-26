@@ -17,9 +17,8 @@ pub struct ExecutionResponse {
     pub exit_code: Option<i32>,
     pub stdout: Option<String>,
     pub stderr: Option<String>,
-    pub started_at: String,
-    pub finished_at: Option<String>,
-    pub error_message: Option<String>,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
 }
 
 impl From<Execution> for ExecutionResponse {
@@ -32,9 +31,8 @@ impl From<Execution> for ExecutionResponse {
             exit_code: execution.exit_code,
             stdout: execution.stdout,
             stderr: execution.stderr,
-            started_at: execution.started_at.to_rfc3339(),
-            finished_at: execution.finished_at.map(|t| t.to_rfc3339()),
-            error_message: execution.error_message,
+            started_at: execution.started_at,
+            finished_at: execution.finished_at,
         }
     }
 }

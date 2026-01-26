@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -15,11 +14,10 @@ pub struct Plugin {
     pub entry_point: String,
     pub enabled: bool,
     pub parameters: Option<String>,
-    pub metadata: Option<String>,
     pub python_venv_path: Option<String>,
     pub python_dependencies: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type, PartialEq)]

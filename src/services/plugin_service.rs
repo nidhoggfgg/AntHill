@@ -4,7 +4,6 @@ use crate::repository::PluginRepository;
 use crate::paths;
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::Value;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{Cursor, Read, Write};
@@ -20,7 +19,6 @@ struct PackageMetadata {
     description: String,
     author: String,
     entry_point: String,
-    metadata: Option<Value>,
     parameters: Option<Vec<PluginParameter>>,
 }
 
@@ -65,7 +63,6 @@ impl PluginService {
             description,
             author,
             entry_point,
-            metadata,
             parameters,
         } = spec;
 
@@ -96,7 +93,6 @@ impl PluginService {
         }
 
         let plugin_type = Self::parse_plugin_type(&plugin_type)?;
-        let metadata = metadata.map(Self::stringify_metadata);
         let parameters_json = Self::validate_parameters(parameters)?;
         let mut entry_point = entry_point;
         Self::validate_entry_point(&entry_point)?;
@@ -163,7 +159,7 @@ impl PluginService {
             python_venv_path = Some(venv_dir.to_string_lossy().to_string());
         }
 
-        let now = Utc::now();
+        let now = Utc::now().timestamp_millis();
         let plugin = Plugin {
             id: internal_id,
             plugin_id: plugin_id.clone(),
@@ -177,7 +173,6 @@ impl PluginService {
             enabled: true,
             created_at: now,
             updated_at: now,
-            metadata,
             parameters: parameters_json,
             python_venv_path,
             python_dependencies: python_dependencies_json,
@@ -382,13 +377,6 @@ impl PluginService {
             "python" => Ok(PluginType::Python),
             "javascript" | "js" => Ok(PluginType::JavaScript),
             _ => Err(AppError::InvalidPluginType),
-        }
-    }
-
-    fn stringify_metadata(value: Value) -> String {
-        match value {
-            Value::String(s) => s,
-            other => other.to_string(),
         }
     }
 

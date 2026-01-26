@@ -15,7 +15,7 @@ impl ExecutionRepository {
 
     pub async fn create(&self, plugin_id: &str) -> Result<Execution> {
         let id = uuid::Uuid::new_v4().to_string();
-        let now = Utc::now();
+        let now = Utc::now().timestamp_millis();
 
         let execution = Execution {
             id: id.clone(),
@@ -27,7 +27,6 @@ impl ExecutionRepository {
             stderr: None,
             started_at: now,
             finished_at: None,
-            error_message: None,
         };
 
         sqlx::query(
@@ -116,7 +115,7 @@ impl ExecutionRepository {
         .bind(stderr)
         .bind(exit_code)
         .bind(status as i32)
-        .bind(Utc::now())
+        .bind(Utc::now().timestamp_millis())
         .bind(id)
         .execute(&self.pool)
         .await?;
