@@ -228,6 +228,7 @@ fi
 
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/bin"
+mkdir -p "$BUNDLE_DIR/conf"
 
 cp "$BIN_PATH" "$BUNDLE_DIR/bin/$BIN_NAME"
 echo "$VERSION" > "$BUNDLE_DIR/VERSION"
@@ -300,6 +301,21 @@ else
   cp "$UV_BIN_PATH" "$BUNDLE_DIR/bin/uv"
   chmod +x "$BUNDLE_DIR/bin/uv"
 fi
+
+if [[ "$OS" == "windows" ]]; then
+  UV_RELATIVE_PATH="bin/uv.exe"
+else
+  UV_RELATIVE_PATH="bin/uv"
+fi
+
+cat > "$BUNDLE_DIR/conf/config.json" <<EOF
+{
+  "database_url": "sqlite:data/atom_node.db",
+  "host": "127.0.0.1",
+  "port": 6701,
+  "uv_path": "$UV_RELATIVE_PATH"
+}
+EOF
 
 if [[ "$OS" == "windows" ]]; then
   cat > "$BUNDLE_DIR/$NAME.cmd" <<EOF

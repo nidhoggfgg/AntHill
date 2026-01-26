@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let execution_repo = ExecutionRepository::new(db_pool);
 
     // Initialize services
-    let plugin_service = PluginService::new(plugin_repo.clone());
+    let plugin_service = PluginService::new(plugin_repo.clone(), config.uv_path.clone());
     let execution_service = ExecutionService::new(execution_repo, plugin_repo);
 
     // Create router

@@ -34,11 +34,12 @@ enum PackageMetadataPayload {
 #[derive(Clone)]
 pub struct PluginService {
     repo: PluginRepository,
+    uv_path: Option<PathBuf>,
 }
 
 impl PluginService {
-    pub fn new(repo: PluginRepository) -> Self {
-        Self { repo }
+    pub fn new(repo: PluginRepository, uv_path: Option<PathBuf>) -> Self {
+        Self { repo, uv_path }
     }
 
     pub async fn list_plugins(&self) -> Result<Vec<Plugin>> {
@@ -219,8 +220,13 @@ impl PluginService {
                 },
                 None => None,
             };
-            if let Err(err) =
-                Self::prepare_python_env(&venv_dir, &plugin_dir, resolved_deps.as_ref()).await
+            if let Err(err) = Self::prepare_python_env(
+                self.uv_path.as_deref(),
+                &venv_dir,
+                &plugin_dir,
+                resolved_deps.as_ref(),
+            )
+            .await
             {
                 let _ = fs::remove_dir_all(&plugin_dir);
                 let _ = fs::remove_dir_all(&venv_dir);
@@ -743,6 +749,7 @@ impl PluginService {
     }
 
     async fn prepare_python_env(
+        uv_path: Option<&Path>,
         venv_dir: &Path,
         plugin_dir: &Path,
         dependencies: Option<&PythonDependencies>,
@@ -752,7 +759,7 @@ impl PluginService {
         }
 
         let venv_dir_str = venv_dir.to_string_lossy().to_string();
-        Self::run_uv_command(&vec!["venv".to_string(), venv_dir_str], None).await?;
+        Self::run_uv_command(uv_path, &vec!["venv".to_string(), venv_dir_str], None).await?;
 
         let python_path = Self::python_executable_path(venv_dir);
         if !python_path.is_file() {
@@ -788,7 +795,7 @@ impl PluginService {
             }
         };
 
-        Self::run_uv_command(&args, current_dir.as_deref()).await?;
+        Self::run_uv_command(uv_path, &args, current_dir.as_deref()).await?;
         Ok(())
     }
 
@@ -800,8 +807,15 @@ impl PluginService {
         }
     }
 
-    async fn run_uv_command(args: &[String], current_dir: Option<&Path>) -> Result<()> {
-        let mut cmd = tokio::process::Command::new("uv");
+    async fn run_uv_command(
+        uv_path: Option<&Path>,
+        args: &[String],
+        current_dir: Option<&Path>,
+    ) -> Result<()> {
+        let mut cmd = match uv_path {
+            Some(path) => tokio::process::Command::new(path),
+            None => tokio::process::Command::new("uv"),
+        };
         cmd.args(args);
         if let Some(dir) = current_dir {
             cmd.current_dir(dir);

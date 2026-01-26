@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub database_url: String,
     pub host: String,
     pub port: u16,
+    pub uv_path: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -16,8 +17,9 @@ impl Default for Config {
             .unwrap_or_else(|_| "sqlite:atom_node.db".to_string());
         Self {
             database_url,
-            host: "0.0.0.0".to_string(),
+            host: "127.0.0.1".to_string(),
             port: 6701,
+            uv_path: None,
         }
     }
 }
@@ -43,6 +45,7 @@ impl Config {
         }
 
         config.normalize_database_url()?;
+        config.normalize_uv_path()?;
         Ok(config)
     }
 
@@ -68,6 +71,9 @@ impl Config {
         }
         if let Some(port) = file_config.port {
             self.port = port;
+        }
+        if let Some(uv_path) = file_config.uv_path {
+            self.uv_path = Some(PathBuf::from(uv_path));
         }
     }
 
@@ -98,6 +104,32 @@ impl Config {
         self.database_url = format!("sqlite:{}", absolute.display());
         Ok(())
     }
+
+    fn normalize_uv_path(&mut self) -> Result<()> {
+        let Some(path) = self.uv_path.as_ref() else {
+            return Ok(());
+        };
+
+        let path_str = path.to_string_lossy();
+        if path_str.trim().is_empty() {
+            anyhow::bail!("uv_path in config cannot be empty");
+        }
+
+        if path.is_absolute() {
+            anyhow::bail!("uv_path must be relative to install root");
+        }
+
+        if path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            anyhow::bail!("uv_path cannot contain '..'");
+        }
+
+        let root = crate::paths::install_root()?;
+        self.uv_path = Some(root.join(path));
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,4 +137,5 @@ struct FileConfig {
     database_url: Option<String>,
     host: Option<String>,
     port: Option<u16>,
+    uv_path: Option<String>,
 }
