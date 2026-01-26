@@ -1,5 +1,6 @@
 use crate::repository::DbPool;
 use anyhow::Result;
+use sqlx::Row;
 
 pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     // Ensure the database URL has the correct format
@@ -22,6 +23,7 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
             plugin_id TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             version TEXT NOT NULL,
+            min_atom_node_version TEXT,
             plugin_type INTEGER NOT NULL,
             description TEXT,
             author TEXT,
@@ -58,5 +60,22 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     .execute(&pool)
     .await?;
 
+    ensure_min_atom_node_version_column(&pool).await?;
+
     Ok(pool)
+}
+
+async fn ensure_min_atom_node_version_column(pool: &DbPool) -> Result<()> {
+    let columns = sqlx::query("PRAGMA table_info(plugins)")
+        .fetch_all(pool)
+        .await?;
+    let has_column = columns
+        .iter()
+        .any(|row| row.get::<String, _>("name") == "min_atom_node_version");
+    if !has_column {
+        sqlx::query("ALTER TABLE plugins ADD COLUMN min_atom_node_version TEXT")
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
 }

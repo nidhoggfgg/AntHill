@@ -16,6 +16,7 @@ struct PackageMetadata {
     plugin_id: Option<String>,
     name: String,
     version: String,
+    min_atom_node_version: Option<String>,
     plugin_type: String,
     description: String,
     author: String,
@@ -74,6 +75,7 @@ impl PluginService {
             plugin_id,
             name,
             version,
+            min_atom_node_version,
             plugin_type,
             description: _,
             author: _,
@@ -95,6 +97,7 @@ impl PluginService {
         }
         let _ = Self::parse_plugin_type(&plugin_type)?;
         let _ = Self::validate_parameters(parameters)?;
+        let _ = Self::normalize_min_atom_node_version(min_atom_node_version)?;
         let _ = Self::resolve_entry_point(
             &entry_point,
             temp_dir.path(),
@@ -141,6 +144,7 @@ impl PluginService {
             plugin_id,
             name,
             version,
+            min_atom_node_version,
             plugin_type,
             description,
             author,
@@ -163,6 +167,8 @@ impl PluginService {
 
         let plugin_type = Self::parse_plugin_type(&plugin_type)?;
         let parameters_json = Self::validate_parameters(parameters)?;
+        let min_atom_node_version =
+            Self::normalize_min_atom_node_version(min_atom_node_version)?;
 
         let internal_id = Uuid::new_v4().to_string();
         let plugin_dir = Self::plugin_dir_for(&plugin_id)?;
@@ -229,6 +235,7 @@ impl PluginService {
             plugin_id: plugin_id.clone(),
             name,
             version,
+            min_atom_node_version,
             plugin_type,
             description,
             author,
@@ -604,6 +611,40 @@ impl PluginService {
             )));
         }
         Ok(())
+    }
+
+    fn normalize_min_atom_node_version(
+        raw: Option<String>,
+    ) -> Result<Option<String>> {
+        let Some(raw) = raw else {
+            return Ok(None);
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::Execution(
+                "Minimum atom_node version cannot be empty".to_string(),
+            ));
+        }
+        let required = Version::parse(trimmed).map_err(|e| {
+            AppError::Execution(format!(
+                "Invalid minimum atom_node version '{}': {}",
+                trimmed, e
+            ))
+        })?;
+        let current = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|e| {
+            AppError::Execution(format!(
+                "Invalid current atom_node version '{}': {}",
+                env!("CARGO_PKG_VERSION"),
+                e
+            ))
+        })?;
+        if current < required {
+            return Err(AppError::Execution(format!(
+                "Plugin requires atom_node >= {}, current version is {}",
+                required, current
+            )));
+        }
+        Ok(Some(required.to_string()))
     }
 
     fn validate_plugin_id(plugin_id: &str) -> Result<()> {

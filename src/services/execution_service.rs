@@ -3,6 +3,7 @@ use crate::executor::{NodeExecutor, PluginExecutor, PythonExecutor};
 use crate::models::{Execution, ExecutionStatus, PluginParameter};
 use crate::repository::{ExecutionRepository, PluginRepository};
 use crate::paths;
+use semver::Version;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -35,6 +36,8 @@ impl ExecutionService {
         if !plugin.enabled {
             return Err(AppError::PluginDisabled);
         }
+
+        Self::ensure_min_atom_node_version(&plugin.min_atom_node_version)?;
 
         // Create execution record
         let execution = self.exec_repo.create(plugin_id).await?;
@@ -254,6 +257,40 @@ impl ExecutionService {
         }
 
         Ok(resolved)
+    }
+
+    fn ensure_min_atom_node_version(
+        required: &Option<String>,
+    ) -> Result<()> {
+        let Some(required) = required.as_deref() else {
+            return Ok(());
+        };
+        let trimmed = required.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::Execution(
+                "Minimum atom_node version cannot be empty".to_string(),
+            ));
+        }
+        let required = Version::parse(trimmed).map_err(|e| {
+            AppError::Execution(format!(
+                "Invalid minimum atom_node version '{}': {}",
+                trimmed, e
+            ))
+        })?;
+        let current = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|e| {
+            AppError::Execution(format!(
+                "Invalid current atom_node version '{}': {}",
+                env!("CARGO_PKG_VERSION"),
+                e
+            ))
+        })?;
+        if current < required {
+            return Err(AppError::Execution(format!(
+                "Plugin requires atom_node >= {}, current version is {}",
+                required, current
+            )));
+        }
+        Ok(())
     }
 
     fn parse_parameters(raw: &Option<String>) -> Result<Vec<PluginParameter>> {

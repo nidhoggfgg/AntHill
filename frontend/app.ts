@@ -2,6 +2,7 @@ type Plugin = {
   id: string;
   name: string;
   version: string;
+  min_atom_node_version?: string | null;
   plugin_type: string;
   description: string;
   author: string;
@@ -301,12 +302,17 @@ function renderPluginDetail(plugin: Plugin) {
     ? `<span class="badge badge--success">已启用</span>`
     : `<span class="badge badge--muted">已停用</span>`;
 
+  const minAtomNodeVersion = plugin.min_atom_node_version
+    ? escapeHtml(plugin.min_atom_node_version)
+    : "无";
+
   const toggleAction = plugin.enabled ? "disable" : "enable";
   const toggleLabel = plugin.enabled ? "禁用" : "启用";
 
   dom.pluginModalTitle.textContent = plugin.name;
   dom.pluginModalMeta.innerHTML = `
     <span>版本: ${escapeHtml(plugin.version)}</span>
+    <span>最低 Atom Node 版本: ${minAtomNodeVersion}</span>
     <span>作者: ${escapeHtml(plugin.author || "未知")}</span>
     ${enabledBadge}
   `;
