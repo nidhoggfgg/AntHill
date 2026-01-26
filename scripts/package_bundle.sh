@@ -230,6 +230,7 @@ rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/bin"
 
 cp "$BIN_PATH" "$BUNDLE_DIR/bin/$BIN_NAME"
+echo "$VERSION" > "$BUNDLE_DIR/VERSION"
 
 UV_EXT=""
 UV_URL_RESOLVED="$UV_URL"

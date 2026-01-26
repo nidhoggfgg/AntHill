@@ -9,7 +9,7 @@ mod services;
 
 use crate::config::Config;
 use crate::repository::{ExecutionRepository, PluginRepository, establish_connection};
-use crate::services::{ExecutionService, PluginService};
+use crate::services::{ExecutionService, PluginService, UpdateService};
 use api::create_router;
 use std::net::SocketAddr;
 use tower_http::trace::TraceLayer;
@@ -25,6 +25,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    if let Err(err) = UpdateService::apply_pending_update() {
+        tracing::error!("Failed to apply pending update: {}", err);
+    }
 
     // Load configuration
     let config = Config::from_env()?;

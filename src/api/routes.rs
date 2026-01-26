@@ -1,6 +1,6 @@
-use super::handlers::{execution, health, plugin};
+use super::handlers::{execution, health, plugin, update};
 use super::middleware::cors::add_cors;
-use crate::services::{ExecutionService, PluginService};
+use crate::services::{ExecutionService, PluginService, UpdateService};
 use axum::{
     Router,
     routing::{delete, get, post, put},
@@ -10,12 +10,14 @@ use axum::{
 pub struct AppState {
     pub plugin_service: PluginService,
     pub execution_service: ExecutionService,
+    pub update_service: UpdateService,
 }
 
 pub fn create_router(plugin_service: PluginService, execution_service: ExecutionService) -> Router {
     let state = AppState {
         plugin_service,
         execution_service,
+        update_service: UpdateService::new(),
     };
 
     let api_routes = Router::new()
@@ -34,6 +36,8 @@ pub fn create_router(plugin_service: PluginService, execution_service: Execution
         .route("/api/executions", get(execution::list_executions))
         .route("/api/executions/{id}", get(execution::get_execution))
         .route("/api/executions/{id}/stop", put(execution::stop_execution))
+        // Update
+        .route("/api/update", post(update::stage_update))
         .with_state(state);
 
     add_cors(api_routes)
