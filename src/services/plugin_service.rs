@@ -137,7 +137,11 @@ impl PluginService {
         let mut python_dependencies_json = None;
         if plugin_type == PluginType::Python {
             let venv_dir = Self::python_env_dir_for(&plugin_id)?;
-            let resolved_deps = Self::resolve_python_dependencies(&plugin_dir);
+            let resolved_deps = Self::resolve_python_dependencies(
+                &plugin_dir,
+                metadata_dir.as_deref(),
+                &entry_point,
+            );
             python_dependencies_json = match resolved_deps.as_ref() {
                 Some(deps) => match Self::serialize_python_dependencies(deps) {
                     Ok(json) => Some(json),
@@ -434,21 +438,53 @@ impl PluginService {
 
     fn resolve_python_dependencies(
         plugin_dir: &Path,
+        metadata_dir: Option<&Path>,
+        entry_point: &str,
     ) -> Option<PythonDependencies> {
-        let pyproject = plugin_dir.join("pyproject.toml");
-        if pyproject.is_file() {
-            return Some(PythonDependencies::Pyproject {
-                path: "pyproject.toml".to_string(),
-            });
+        let mut search_dirs: Vec<PathBuf> = Vec::new();
+        if let Some(dir) = metadata_dir {
+            Self::push_unique_dir(&mut search_dirs, dir.to_path_buf());
+        }
+        if let Some(entry_dir) = Path::new(entry_point).parent() {
+            if !entry_dir.as_os_str().is_empty() {
+                Self::push_unique_dir(&mut search_dirs, entry_dir.to_path_buf());
+            }
+        }
+        Self::push_unique_dir(&mut search_dirs, PathBuf::new());
+
+        if let Some(path) =
+            Self::find_dependency_in_dirs(plugin_dir, &search_dirs, "pyproject.toml")
+        {
+            return Some(PythonDependencies::Pyproject { path });
         }
 
-        let requirements = plugin_dir.join("requirements.txt");
-        if requirements.is_file() {
-            return Some(PythonDependencies::Requirements {
-                path: "requirements.txt".to_string(),
-            });
+        if let Some(path) =
+            Self::find_dependency_in_dirs(plugin_dir, &search_dirs, "requirements.txt")
+        {
+            return Some(PythonDependencies::Requirements { path });
         }
 
+        None
+    }
+
+    fn push_unique_dir(target: &mut Vec<PathBuf>, dir: PathBuf) {
+        if !target.iter().any(|existing| existing == &dir) {
+            target.push(dir);
+        }
+    }
+
+    fn find_dependency_in_dirs(
+        plugin_dir: &Path,
+        search_dirs: &[PathBuf],
+        filename: &str,
+    ) -> Option<String> {
+        for dir in search_dirs {
+            let relative = dir.join(filename);
+            let candidate = plugin_dir.join(&relative);
+            if candidate.is_file() {
+                return Some(relative.to_string_lossy().to_string());
+            }
+        }
         None
     }
 
@@ -492,20 +528,23 @@ impl PluginService {
             "--python".to_string(),
             python_path_str,
         ];
-        let current_dir = match dependencies {
+        let mut current_dir: Option<PathBuf> = None;
+        match dependencies {
             PythonDependencies::Requirements { path } => {
                 args.push("-r".to_string());
                 args.push(path.clone());
-                Some(plugin_dir)
+                current_dir = Some(plugin_dir.to_path_buf());
             }
-            PythonDependencies::Pyproject { path: _ } => {
+            PythonDependencies::Pyproject { path } => {
                 args.push("-e".to_string());
                 args.push(".".to_string());
-                Some(plugin_dir)
+                let project_root = plugin_dir.join(path);
+                let project_root = project_root.parent().unwrap_or(plugin_dir);
+                current_dir = Some(project_root.to_path_buf());
             }
         };
 
-        Self::run_uv_command(&args, current_dir).await?;
+        Self::run_uv_command(&args, current_dir.as_deref()).await?;
         Ok(())
     }
 
