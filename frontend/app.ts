@@ -1,5 +1,48 @@
+type PluginParamType =
+  | "string"
+  | "number"
+  | "integer"
+  | "boolean"
+  | "json"
+  | "date"
+  | "select"
+  | "multi_select"
+  | "file"
+  | "directory"
+  | "textarea";
+
+type PluginParameterChoice = {
+  label: string;
+  value: unknown;
+};
+
+type PluginParameterValidation = {
+  min?: number;
+  max?: number;
+};
+
+type PluginParameter = {
+  name: string;
+  type: PluginParamType;
+  description?: string | null;
+  default?: unknown;
+  choices?: unknown[] | null;
+  label?: string | null;
+  placeholder?: string | null;
+  group?: string | null;
+  format?: string | null;
+  accept?: string[] | null;
+  validation?: PluginParameterValidation | null;
+};
+
+type PluginParameterGroup = {
+  id: string;
+  label: string;
+};
+
 type Plugin = {
   id: string;
+  plugin_id?: string;
   name: string;
   version: string;
   min_atom_node_version?: string | null;
@@ -8,10 +51,14 @@ type Plugin = {
   author: string;
   entry_point: string;
   enabled: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: string | number;
+  updated_at: string | number;
   parameters?: PluginParameter[] | null;
+  groups?: PluginParameterGroup[] | null;
+  metadata?: Record<string, unknown> | null;
 };
+
+type PluginPayload = Omit<Plugin, "id"> & { id?: string; plugin_id?: string };
 
 type Execution = {
   id: string;
@@ -21,8 +68,8 @@ type Execution = {
   exit_code: number | null;
   stdout: string | null;
   stderr: string | null;
-  started_at: string;
-  finished_at: string | null;
+  started_at: string | number;
+  finished_at: string | number | null;
   error_message: string | null;
 };
 
@@ -32,16 +79,8 @@ type HealthResponse = {
   version: string;
 };
 
-type PluginsListResponse = { data: Plugin[] };
+type PluginsListResponse = { data: PluginPayload[] };
 type ExecutionsListResponse = { data: Execution[] };
-
-type PluginParameter = {
-  name: string;
-  type: "string" | "number" | "integer" | "boolean" | "json";
-  description?: string | null;
-  default?: unknown;
-  choices?: unknown[] | null;
-};
 
 type ExecutePluginRequest = {
   params?: Record<string, unknown>;
@@ -98,7 +137,7 @@ const api = {
   async uninstallPlugin(id: string): Promise<void> {
     await request<void>(`/api/plugins/${id}`, { method: "DELETE" });
   },
-  async updatePlugin(id: string): Promise<Plugin> {
+  async updatePlugin(id: string): Promise<PluginPayload> {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     const response = await request<Plugin>(`/api/plugins/${id}`);
     return response;
@@ -151,6 +190,113 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, "");
+}
+
+function normalizePlugin(plugin: PluginPayload): Plugin {
+  const resolvedId = plugin.id || plugin.plugin_id || plugin.name;
+  return { ...plugin, id: resolvedId };
+}
+
+function normalizeChoices(choices?: unknown[] | null): PluginParameterChoice[] {
+  if (!choices || choices.length === 0) return [];
+  return choices.map((choice) => {
+    if (choice && typeof choice === "object" && "value" in (choice as Record<string, unknown>)) {
+      const record = choice as { label?: unknown; value?: unknown };
+      return {
+        label: record.label !== undefined ? String(record.label) : String(record.value ?? ""),
+        value: record.value,
+      };
+    }
+    return { label: String(choice), value: choice };
+  });
+}
+
+function serializeChoiceValue(value: unknown): string {
+  if (value === undefined) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function parseChoiceValue(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function formatDefaultValue(param: PluginParameter): string | undefined {
+  if (param.default === undefined || param.default === null) return undefined;
+  if (param.type === "json") {
+    if (typeof param.default === "string") return param.default;
+    try {
+      return JSON.stringify(param.default, null, 2);
+    } catch {
+      return String(param.default);
+    }
+  }
+  return typeof param.default === "string" ? param.default : String(param.default);
+}
+
+function getParamLabel(param: PluginParameter): string {
+  return (param.label || param.name).trim();
+}
+
+function getParamHint(param: PluginParameter, labelText: string): string | null {
+  const hints: string[] = [];
+  if (param.description && param.description !== labelText) {
+    hints.push(param.description);
+  }
+  if (param.format) {
+    hints.push(`格式: ${param.format}`);
+  }
+  if (param.accept && param.accept.length > 0) {
+    hints.push(`允许: ${param.accept.join(", ")}`);
+  }
+  if (param.validation && (param.validation.min !== undefined || param.validation.max !== undefined)) {
+    const minText = param.validation.min !== undefined ? `最小 ${param.validation.min}` : "";
+    const maxText = param.validation.max !== undefined ? `最大 ${param.validation.max}` : "";
+    hints.push([minText, maxText].filter(Boolean).join(" / "));
+  }
+  return hints.length > 0 ? hints.join(" · ") : null;
+}
+
+function groupParameters(
+  parameters: PluginParameter[],
+  groups?: PluginParameterGroup[] | null
+): Array<{ id: string; label: string; items: PluginParameter[] }> {
+  const grouped = new Map<string, PluginParameter[]>();
+  parameters.forEach((param) => {
+    const groupId = (param.group || "default").trim();
+    if (!grouped.has(groupId)) {
+      grouped.set(groupId, []);
+    }
+    grouped.get(groupId)!.push(param);
+  });
+
+  const result: Array<{ id: string; label: string; items: PluginParameter[] }> = [];
+  const used = new Set<string>();
+
+  if (groups && groups.length > 0) {
+    groups.forEach((group) => {
+      const items = grouped.get(group.id);
+      if (items && items.length > 0) {
+        result.push({ id: group.id, label: group.label, items });
+        used.add(group.id);
+      }
+    });
+  }
+
+  grouped.forEach((items, id) => {
+    if (used.has(id)) return;
+    const label = id === "default" ? "默认参数" : id;
+    result.push({ id, label, items });
+  });
+
+  return result;
 }
 
 function notify(message: string, variant: "success" | "error" | "info" = "info") {
@@ -222,7 +368,7 @@ async function connect() {
 async function loadPlugins() {
   try {
     const response = await api.listPlugins();
-    state.plugins = response.data || [];
+    state.plugins = (response.data || []).map(normalizePlugin);
     renderPluginList();
   } catch (error) {
     const message = error instanceof Error ? error.message : "加载插件失败。";
@@ -249,6 +395,7 @@ function getFilteredPlugins(): Plugin[] {
   return state.plugins.filter(
     (p) =>
       p.name.toLowerCase().includes(search) ||
+      p.plugin_id?.toLowerCase().includes(search) ||
       p.description?.toLowerCase().includes(search) ||
       p.author?.toLowerCase().includes(search)
   );
@@ -380,85 +527,185 @@ function renderExecutionForm(plugin: Plugin) {
   }
 
   const fragment = document.createDocumentFragment();
-  plugin.parameters.forEach((param) => {
-    fragment.appendChild(buildParameterField(param));
+  const parameterGroups = groupParameters(plugin.parameters, plugin.groups);
+  parameterGroups.forEach((group) => {
+    const groupWrapper = document.createElement("div");
+    groupWrapper.className = "parameter-group";
+    if (parameterGroups.length > 1 || group.id !== "default") {
+      const groupTitle = document.createElement("h4");
+      groupTitle.className = "parameter-group__title";
+      groupTitle.textContent = group.label;
+      groupWrapper.appendChild(groupTitle);
+    }
+    group.items.forEach((param) => {
+      groupWrapper.appendChild(buildParameterField(param));
+    });
+    fragment.appendChild(groupWrapper);
   });
   container.appendChild(fragment);
 }
 
 function buildParameterField(param: PluginParameter): HTMLElement {
-  const label = document.createElement("label");
-  label.className = "field";
+  const isBoolean = param.type === "boolean";
+  const field = document.createElement(isBoolean ? "div" : "label");
+  field.className = "field";
 
-  const labelText = document.createElement("span");
-  labelText.textContent = param.description || param.name;
-  label.appendChild(labelText);
+  const labelText = getParamLabel(param);
+  const hintText = getParamHint(param, labelText);
 
-  const hasChoices = Array.isArray(param.choices) && param.choices.length > 0;
-  if (hasChoices) {
+  if (!isBoolean) {
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = labelText;
+    field.appendChild(labelSpan);
+  }
+
+  if (hintText) {
+    const hint = document.createElement("p");
+    hint.className = "field__hint";
+    hint.textContent = hintText;
+    field.appendChild(hint);
+  }
+
+  const choices = normalizeChoices(param.choices || undefined);
+  const hasChoices = choices.length > 0;
+  const isMultiSelect = param.type === "multi_select";
+  const isSelectType = param.type === "select" || (param.type === "string" && hasChoices);
+
+  if (isMultiSelect) {
+    const multiWrapper = document.createElement("div");
+    multiWrapper.className = "multi-select";
+
+    const defaultValues = new Set<string>();
+    if (Array.isArray(param.default)) {
+      param.default.forEach((value) => defaultValues.add(serializeChoiceValue(value)));
+    }
+
+    if (choices.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "暂无可选项。";
+      multiWrapper.appendChild(empty);
+    } else {
+      choices.forEach((choice, index) => {
+        const option = document.createElement("label");
+        option.className = "multi-select__option";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.name = param.name;
+        checkbox.value = serializeChoiceValue(choice.value);
+        checkbox.id = `param-${param.name}-${index}`;
+        if (defaultValues.has(checkbox.value)) {
+          checkbox.checked = true;
+        }
+
+        const text = document.createElement("span");
+        text.textContent = choice.label;
+
+        option.appendChild(checkbox);
+        option.appendChild(text);
+        multiWrapper.appendChild(option);
+      });
+    }
+
+    field.appendChild(multiWrapper);
+    return field;
+  }
+
+  if (isSelectType) {
     const select = document.createElement("select");
     select.name = param.name;
 
-    const defaultChoice = param.default !== undefined ? JSON.stringify(param.default) : "";
-    if (!defaultChoice) {
+    const defaultValues = new Set<string>();
+    if (Array.isArray(param.default)) {
+      param.default.forEach((value) => defaultValues.add(serializeChoiceValue(value)));
+    } else if (param.default !== undefined && param.default !== null) {
+      defaultValues.add(serializeChoiceValue(param.default));
+    }
+
+    if (defaultValues.size === 0) {
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = "请选择";
+      placeholder.textContent = param.placeholder || "请选择";
       placeholder.disabled = true;
       placeholder.selected = true;
       select.appendChild(placeholder);
     }
 
-    const choices = param.choices as unknown[];
     choices.forEach((choice) => {
       const option = document.createElement("option");
-      const serialized = JSON.stringify(choice);
+      const serialized = serializeChoiceValue(choice.value);
       option.value = serialized;
-      option.textContent =
-        typeof choice === "string" ? choice : serialized;
-      if (defaultChoice && serialized === defaultChoice) {
+      option.textContent = choice.label;
+      if (defaultValues.has(serialized)) {
         option.selected = true;
       }
       select.appendChild(option);
     });
 
-    label.appendChild(select);
-    return label;
+    field.appendChild(select);
+    return field;
   }
 
-  const defaultVal = param.default !== undefined ? String(param.default) : "";
+  const defaultVal = formatDefaultValue(param);
+  const placeholder = param.placeholder || `输入 ${labelText}`;
 
   switch (param.type) {
-    case "string":
+    case "string": {
       const stringInput = document.createElement("input");
       stringInput.type = "text";
       stringInput.name = param.name;
-      stringInput.placeholder = `输入 ${param.name}`;
+      stringInput.placeholder = placeholder;
       if (defaultVal) stringInput.value = defaultVal;
-      label.appendChild(stringInput);
+      field.appendChild(stringInput);
       break;
+    }
 
-    case "number":
+    case "date": {
+      const dateInput = document.createElement("input");
+      dateInput.type = "date";
+      dateInput.name = param.name;
+      dateInput.placeholder = param.placeholder || param.format || "";
+      if (defaultVal) dateInput.value = defaultVal;
+      field.appendChild(dateInput);
+      break;
+    }
+
+    case "number": {
       const numberInput = document.createElement("input");
       numberInput.type = "number";
       numberInput.name = param.name;
-      numberInput.placeholder = `输入 ${param.name}`;
+      numberInput.placeholder = placeholder;
       numberInput.step = "any";
+      if (param.validation?.min !== undefined) {
+        numberInput.min = String(param.validation.min);
+      }
+      if (param.validation?.max !== undefined) {
+        numberInput.max = String(param.validation.max);
+      }
       if (defaultVal) numberInput.value = defaultVal;
-      label.appendChild(numberInput);
+      field.appendChild(numberInput);
       break;
+    }
 
-    case "integer":
+    case "integer": {
       const integerInput = document.createElement("input");
       integerInput.type = "number";
       integerInput.name = param.name;
-      integerInput.placeholder = `输入 ${param.name}`;
+      integerInput.placeholder = placeholder;
       integerInput.step = "1";
+      if (param.validation?.min !== undefined) {
+        integerInput.min = String(param.validation.min);
+      }
+      if (param.validation?.max !== undefined) {
+        integerInput.max = String(param.validation.max);
+      }
       if (defaultVal) integerInput.value = defaultVal;
-      label.appendChild(integerInput);
+      field.appendChild(integerInput);
       break;
+    }
 
-    case "boolean":
+    case "boolean": {
       const booleanWrapper = document.createElement("div");
       booleanWrapper.className = "checkbox-wrapper";
 
@@ -466,30 +713,78 @@ function buildParameterField(param: PluginParameter): HTMLElement {
       booleanInput.type = "checkbox";
       booleanInput.name = param.name;
       booleanInput.id = `param-${param.name}`;
-      if (defaultVal === "true") booleanInput.checked = true;
+      if (param.default === true || param.default === "true") {
+        booleanInput.checked = true;
+      }
 
       const booleanLabel = document.createElement("label");
       booleanLabel.htmlFor = `param-${param.name}`;
-      booleanLabel.textContent = param.description || param.name;
+      booleanLabel.textContent = labelText;
 
       booleanWrapper.appendChild(booleanInput);
       booleanWrapper.appendChild(booleanLabel);
-
-      label.textContent = "";
-      label.appendChild(booleanWrapper);
+      field.appendChild(booleanWrapper);
       break;
+    }
+
+    case "textarea": {
+      const textarea = document.createElement("textarea");
+      textarea.name = param.name;
+      textarea.placeholder = placeholder;
+      textarea.rows = 4;
+      if (defaultVal) textarea.value = defaultVal;
+      field.appendChild(textarea);
+      break;
+    }
+
+    case "file":
+    case "directory": {
+      const wrapper = document.createElement("div");
+      wrapper.className = "path-field";
+
+      const pathInput = document.createElement("input");
+      pathInput.type = "text";
+      pathInput.name = param.name;
+      pathInput.placeholder =
+        param.placeholder || (param.type === "directory" ? "输入目录路径或选择目录" : "输入文件路径或选择文件");
+      if (defaultVal) pathInput.value = defaultVal;
+
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.className = "path-field__picker";
+      if (param.type === "directory") {
+        (picker as HTMLInputElement).setAttribute("webkitdirectory", "");
+      }
+      if (param.accept && param.accept.length > 0) {
+        picker.accept = param.accept.join(",");
+      }
+
+      picker.addEventListener("change", () => {
+        const file = picker.files?.[0];
+        if (!file) return;
+        const fallback = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+        pathInput.value = fallback && fallback.includes("/") ? fallback.split("/")[0] : file.name;
+      });
+
+      wrapper.appendChild(pathInput);
+      wrapper.appendChild(picker);
+      field.appendChild(wrapper);
+      break;
+    }
 
     case "json":
+    default: {
       const jsonTextarea = document.createElement("textarea");
       jsonTextarea.name = param.name;
-      jsonTextarea.placeholder = `输入 ${param.name} 的 JSON 值`;
+      jsonTextarea.placeholder = param.placeholder || `输入 ${labelText} 的 JSON 值`;
       jsonTextarea.rows = 4;
       if (defaultVal) jsonTextarea.value = defaultVal;
-      label.appendChild(jsonTextarea);
+      field.appendChild(jsonTextarea);
       break;
+    }
   }
 
-  return label;
+  return field;
 }
 
 function buildPluginCard(plugin: Plugin) {
@@ -596,38 +891,61 @@ async function handleExecution(event: SubmitEvent) {
 
   if (state.selectedPlugin.parameters && state.selectedPlugin.parameters.length > 0) {
     state.selectedPlugin.parameters.forEach((param) => {
+      if (param.type === "boolean") {
+        const input = executionForm.querySelector<HTMLInputElement>(`[name="${param.name}"]`);
+        if (input) {
+          const checked = input.checked;
+          if (checked || param.default === true || param.default === "true") {
+            params[param.name] = checked;
+          }
+        }
+        return;
+      }
+
+      if (param.type === "multi_select") {
+        const values = formData
+          .getAll(param.name)
+          .map((value) => String(value))
+          .filter((value) => value !== "");
+        if (values.length > 0) {
+          params[param.name] = values.map((value) => parseChoiceValue(value));
+        }
+        return;
+      }
+
       const value = formData.get(param.name);
-      if (value !== null && value !== "") {
-        const hasChoices = Array.isArray(param.choices) && param.choices.length > 0;
-        if (hasChoices) {
+      if (value === null || value === "") {
+        return;
+      }
+
+      const hasChoices = Array.isArray(param.choices) && param.choices.length > 0;
+      if (param.type === "select" || (param.type === "string" && hasChoices)) {
+        params[param.name] = parseChoiceValue(String(value));
+        return;
+      }
+
+      switch (param.type) {
+        case "string":
+        case "date":
+        case "textarea":
+        case "file":
+        case "directory":
+          params[param.name] = String(value);
+          break;
+        case "number":
+          params[param.name] = Number(value);
+          break;
+        case "integer":
+          params[param.name] = Number.parseInt(String(value), 10);
+          break;
+        case "json":
+        default:
           try {
             params[param.name] = JSON.parse(String(value));
           } catch {
             params[param.name] = String(value);
           }
-        } else {
-          switch (param.type) {
-            case "string":
-              params[param.name] = String(value);
-              break;
-            case "number":
-              params[param.name] = Number(value);
-              break;
-            case "integer":
-              params[param.name] = Number.parseInt(String(value), 10);
-              break;
-            case "boolean":
-              params[param.name] = String(value) === "on";
-              break;
-            case "json":
-              try {
-                params[param.name] = JSON.parse(String(value));
-              } catch {
-                params[param.name] = String(value);
-              }
-              break;
-          }
-        }
+          break;
       }
     });
   }
@@ -740,17 +1058,33 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => map[char] || char);
 }
 
-function formatTimestamp(value: string) {
-  if (!value) return "--";
+function toTimestampMs(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") {
+    return value < 1e12 ? value * 1000 : value;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const numeric = Number(trimmed);
+  if (!Number.isNaN(numeric)) {
+    return numeric < 1e12 ? numeric * 1000 : numeric;
+  }
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+  if (Number.isNaN(date.getTime())) return null;
+  return date.getTime();
+}
+
+function formatTimestamp(value: string | number | null | undefined) {
+  const timestamp = toTimestampMs(value ?? null);
+  if (!timestamp) return "--";
+  const date = new Date(timestamp);
   return date.toLocaleDateString();
 }
 
-function formatDateTime(value: string) {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+function formatDateTime(value: string | number | null | undefined) {
+  const timestamp = toTimestampMs(value ?? null);
+  if (!timestamp) return "--";
+  const date = new Date(timestamp);
   return date.toLocaleString(undefined, {
     year: "numeric",
     month: "2-digit",
@@ -761,9 +1095,12 @@ function formatDateTime(value: string) {
   });
 }
 
-function calculateDuration(startedAt: string, finishedAt: string | null): string {
-  const start = new Date(startedAt).getTime();
-  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now();
+function calculateDuration(
+  startedAt: string | number | null | undefined,
+  finishedAt: string | number | null
+): string {
+  const start = toTimestampMs(startedAt ?? null) ?? Date.now();
+  const end = finishedAt ? toTimestampMs(finishedAt) ?? Date.now() : Date.now();
   const durationMs = Math.max(0, end - start);
   const totalSeconds = durationMs / 1000;
   const minutes = Math.floor(totalSeconds / 60);
