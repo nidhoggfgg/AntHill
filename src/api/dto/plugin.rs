@@ -1,5 +1,6 @@
 use crate::error::AppError;
-use crate::models::{Plugin, PluginParameter, PythonDependencies};
+use crate::models::{Plugin, PluginParameter, PluginParameterGroup, PythonDependencies};
+use serde_json::Value;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -26,6 +27,8 @@ pub struct PluginResponse {
     pub created_at: i64,
     pub updated_at: i64,
     pub parameters: Option<Vec<PluginParameter>>,
+    pub groups: Option<Vec<PluginParameterGroup>>,
+    pub metadata: Option<Value>,
     pub python_dependencies: Option<PythonDependencies>,
 }
 
@@ -34,6 +37,8 @@ impl TryFrom<Plugin> for PluginResponse {
 
     fn try_from(plugin: Plugin) -> Result<Self, Self::Error> {
         let parameters = parse_parameters(&plugin.parameters)?;
+        let groups = parse_groups(&plugin.parameter_groups)?;
+        let metadata = parse_metadata(&plugin.metadata)?;
         let python_dependencies = parse_python_dependencies(&plugin.python_dependencies)?;
         Ok(Self {
             id: plugin.plugin_id,
@@ -48,6 +53,8 @@ impl TryFrom<Plugin> for PluginResponse {
             created_at: plugin.created_at,
             updated_at: plugin.updated_at,
             parameters,
+            groups,
+            metadata,
             python_dependencies,
         })
     }
@@ -77,6 +84,32 @@ fn parse_python_dependencies(raw: &Option<String>) -> Result<Option<PythonDepend
     let dependencies = serde_json::from_str(trimmed)
         .map_err(|e| AppError::Execution(format!("Invalid python dependencies: {}", e)))?;
     Ok(Some(dependencies))
+}
+
+fn parse_groups(raw: &Option<String>) -> Result<Option<Vec<PluginParameterGroup>>, AppError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let groups = serde_json::from_str(trimmed)
+        .map_err(|e| AppError::Execution(format!("Invalid plugin groups: {}", e)))?;
+    Ok(Some(groups))
+}
+
+fn parse_metadata(raw: &Option<String>) -> Result<Option<Value>, AppError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let metadata = serde_json::from_str(trimmed)
+        .map_err(|e| AppError::Execution(format!("Invalid plugin metadata: {}", e)))?;
+    Ok(Some(metadata))
 }
 
 #[derive(Debug, Serialize)]

@@ -33,6 +33,8 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             parameters TEXT,
+            parameter_groups TEXT,
+            metadata TEXT,
             python_venv_path TEXT,
             python_dependencies TEXT
         );
@@ -65,6 +67,8 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     .await?;
 
     ensure_min_atom_node_version_column(&pool).await?;
+    ensure_parameter_groups_column(&pool).await?;
+    ensure_metadata_column(&pool).await?;
     ensure_execution_new_columns(&pool).await?;
 
     Ok(pool)
@@ -127,5 +131,35 @@ async fn ensure_execution_new_columns(pool: &DbPool) -> Result<()> {
             .await?;
     }
 
+    Ok(())
+}
+
+async fn ensure_parameter_groups_column(pool: &DbPool) -> Result<()> {
+    let columns = sqlx::query("PRAGMA table_info(plugins)")
+        .fetch_all(pool)
+        .await?;
+    let has_column = columns
+        .iter()
+        .any(|row| row.get::<String, _>("name") == "parameter_groups");
+    if !has_column {
+        sqlx::query("ALTER TABLE plugins ADD COLUMN parameter_groups TEXT")
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn ensure_metadata_column(pool: &DbPool) -> Result<()> {
+    let columns = sqlx::query("PRAGMA table_info(plugins)")
+        .fetch_all(pool)
+        .await?;
+    let has_column = columns
+        .iter()
+        .any(|row| row.get::<String, _>("name") == "metadata");
+    if !has_column {
+        sqlx::query("ALTER TABLE plugins ADD COLUMN metadata TEXT")
+            .execute(pool)
+            .await?;
+    }
     Ok(())
 }

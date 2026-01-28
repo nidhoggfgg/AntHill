@@ -15,6 +15,8 @@ pub struct Plugin {
     pub entry_point: String,
     pub enabled: bool,
     pub parameters: Option<String>,
+    pub parameter_groups: Option<String>,
+    pub metadata: Option<String>,
     pub python_venv_path: Option<String>,
     pub python_dependencies: Option<String>,
     pub created_at: i64,
@@ -29,23 +31,31 @@ pub enum PluginType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum PluginParamType {
     String,
     Number,
     Integer,
     Boolean,
     Json,
+    Date,
+    Select,
+    MultiSelect,
+    File,
+    Directory,
+    Textarea,
 }
 
 impl PluginParamType {
     pub fn matches(&self, value: &Value) -> bool {
         match self {
-            Self::String => value.is_string(),
+            Self::String | Self::Date | Self::File | Self::Directory | Self::Textarea => {
+                value.is_string()
+            }
             Self::Number => value.is_number(),
             Self::Integer => value.as_i64().is_some() || value.as_u64().is_some(),
             Self::Boolean => value.is_boolean(),
-            Self::Json => true,
+            Self::Json | Self::Select | Self::MultiSelect => true,
         }
     }
 }
@@ -59,6 +69,16 @@ pub struct PluginParameter {
     pub default: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub choices: Option<Vec<Value>>,
+    #[serde(default, flatten)]
+    pub extras: std::collections::BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginParameterGroup {
+    pub id: String,
+    pub label: String,
+    #[serde(default, flatten)]
+    pub extras: std::collections::BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

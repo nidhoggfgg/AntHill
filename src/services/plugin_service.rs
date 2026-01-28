@@ -1,5 +1,7 @@
 use crate::error::{AppError, Result};
-use crate::models::{Plugin, PluginParameter, PluginType, PythonDependencies};
+use crate::models::{
+    Plugin, PluginParamType, PluginParameter, PluginParameterGroup, PluginType, PythonDependencies,
+};
 use crate::paths;
 use crate::repository::PluginRepository;
 use chrono::Utc;
@@ -22,6 +24,8 @@ struct PackageMetadata {
     author: String,
     entry_point: String,
     parameters: Option<Vec<PluginParameter>>,
+    groups: Option<Vec<PluginParameterGroup>>,
+    metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +86,8 @@ impl PluginService {
             author: _,
             entry_point,
             parameters,
+            groups,
+            metadata,
         } = spec;
 
         let plugin_id = Self::normalize_plugin_id(plugin_id, &name)?;
@@ -98,6 +104,8 @@ impl PluginService {
         }
         let _ = Self::parse_plugin_type(&plugin_type)?;
         let _ = Self::validate_parameters(parameters)?;
+        let _ = Self::validate_groups(groups)?;
+        let _ = Self::serialize_metadata(metadata)?;
         let _ = Self::normalize_min_atom_node_version(min_atom_node_version)?;
         let _ = Self::resolve_entry_point(&entry_point, temp_dir.path(), metadata_dir.as_deref())?;
         Self::ensure_newer_version(&version, &existing.version)?;
@@ -147,6 +155,8 @@ impl PluginService {
             author,
             entry_point,
             parameters,
+            groups,
+            metadata,
         } = spec;
 
         let plugin_id = Self::normalize_plugin_id(plugin_id, &name)?;
@@ -164,6 +174,8 @@ impl PluginService {
 
         let plugin_type = Self::parse_plugin_type(&plugin_type)?;
         let parameters_json = Self::validate_parameters(parameters)?;
+        let groups_json = Self::validate_groups(groups)?;
+        let metadata_json = Self::serialize_metadata(metadata)?;
         let min_atom_node_version = Self::normalize_min_atom_node_version(min_atom_node_version)?;
 
         let internal_id = Uuid::new_v4().to_string();
@@ -243,6 +255,8 @@ impl PluginService {
             created_at: now,
             updated_at: now,
             parameters: parameters_json,
+            parameter_groups: groups_json,
+            metadata: metadata_json,
             python_venv_path,
             python_dependencies: python_dependencies_json,
         };
@@ -848,13 +862,17 @@ impl PluginService {
                 }
                 let mut seen_choices = std::collections::HashSet::new();
                 for choice in choices {
-                    if !param.param_type.matches(choice) {
+                    let choice_value = choice
+                        .as_object()
+                        .and_then(|obj| obj.get("value"))
+                        .unwrap_or(choice);
+                    if !param.param_type.matches(choice_value) {
                         return Err(crate::error::AppError::Execution(format!(
                             "Choice for parameter '{}' does not match type {:?}",
                             name, param.param_type
                         )));
                     }
-                    let choice_key = serde_json::to_string(choice).map_err(|e| {
+                    let choice_key = serde_json::to_string(choice_value).map_err(|e| {
                         crate::error::AppError::Execution(format!(
                             "Failed to serialize choice for parameter '{}': {}",
                             name, e
@@ -868,11 +886,58 @@ impl PluginService {
                     }
                 }
                 if let Some(default) = &param.default {
-                    if !choices.iter().any(|choice| choice == default) {
-                        return Err(crate::error::AppError::Execution(format!(
-                            "Default value for parameter '{}' must be one of the choices",
-                            name
-                        )));
+                    if param.param_type == PluginParamType::MultiSelect {
+                        let Some(default_items) = default.as_array() else {
+                            return Err(crate::error::AppError::Execution(format!(
+                                "Default value for parameter '{}' must be an array",
+                                name
+                            )));
+                        };
+                        for item in default_items {
+                            let mut item_matches = false;
+                            for choice in choices {
+                                if choice == item {
+                                    item_matches = true;
+                                    break;
+                                }
+                                if let Some(value) =
+                                    choice.as_object().and_then(|obj| obj.get("value"))
+                                {
+                                    if value == item {
+                                        item_matches = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if !item_matches {
+                                return Err(crate::error::AppError::Execution(format!(
+                                    "Default value for parameter '{}' must be one of the choices",
+                                    name
+                                )));
+                            }
+                        }
+                    } else {
+                        let mut default_matches = false;
+                        for choice in choices {
+                            if choice == default {
+                                default_matches = true;
+                                break;
+                            }
+                            if let Some(value) =
+                                choice.as_object().and_then(|obj| obj.get("value"))
+                            {
+                                if value == default {
+                                    default_matches = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if !default_matches {
+                            return Err(crate::error::AppError::Execution(format!(
+                                "Default value for parameter '{}' must be one of the choices",
+                                name
+                            )));
+                        }
                     }
                 }
             }
@@ -880,6 +945,53 @@ impl PluginService {
 
         let json = serde_json::to_string(&parameters).map_err(|e| {
             crate::error::AppError::Execution(format!("Failed to serialize parameters: {}", e))
+        })?;
+        Ok(Some(json))
+    }
+
+    fn validate_groups(groups: Option<Vec<PluginParameterGroup>>) -> Result<Option<String>> {
+        let Some(groups) = groups else {
+            return Ok(None);
+        };
+        let mut seen = std::collections::HashSet::new();
+        for group in &groups {
+            let id = group.id.trim();
+            if id.is_empty() {
+                return Err(crate::error::AppError::Execution(
+                    "Group id cannot be empty".to_string(),
+                ));
+            }
+            if id != group.id {
+                return Err(crate::error::AppError::Execution(format!(
+                    "Group id has leading/trailing whitespace: {}",
+                    group.id
+                )));
+            }
+            if !seen.insert(id.to_string()) {
+                return Err(crate::error::AppError::Execution(format!(
+                    "Duplicate group id: {}",
+                    id
+                )));
+            }
+            if group.label.trim().is_empty() {
+                return Err(crate::error::AppError::Execution(format!(
+                    "Group '{}' label cannot be empty",
+                    id
+                )));
+            }
+        }
+        let json = serde_json::to_string(&groups).map_err(|e| {
+            crate::error::AppError::Execution(format!("Failed to serialize groups: {}", e))
+        })?;
+        Ok(Some(json))
+    }
+
+    fn serialize_metadata(metadata: Option<serde_json::Value>) -> Result<Option<String>> {
+        let Some(metadata) = metadata else {
+            return Ok(None);
+        };
+        let json = serde_json::to_string(&metadata).map_err(|e| {
+            crate::error::AppError::Execution(format!("Failed to serialize metadata: {}", e))
         })?;
         Ok(Some(json))
     }
