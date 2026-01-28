@@ -40,6 +40,7 @@ type PluginParameter = {
   type: "string" | "number" | "integer" | "boolean" | "json";
   description?: string | null;
   default?: unknown;
+  choices?: unknown[] | null;
 };
 
 type ExecutePluginRequest = {
@@ -393,9 +394,41 @@ function buildParameterField(param: PluginParameter): HTMLElement {
   labelText.textContent = param.description || param.name;
   label.appendChild(labelText);
 
+  const hasChoices = Array.isArray(param.choices) && param.choices.length > 0;
+  if (hasChoices) {
+    const select = document.createElement("select");
+    select.name = param.name;
+
+    const defaultChoice = param.default !== undefined ? JSON.stringify(param.default) : "";
+    if (!defaultChoice) {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "请选择";
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      select.appendChild(placeholder);
+    }
+
+    const choices = param.choices as unknown[];
+    choices.forEach((choice) => {
+      const option = document.createElement("option");
+      const serialized = JSON.stringify(choice);
+      option.value = serialized;
+      option.textContent =
+        typeof choice === "string" ? choice : serialized;
+      if (defaultChoice && serialized === defaultChoice) {
+        option.selected = true;
+      }
+      select.appendChild(option);
+    });
+
+    label.appendChild(select);
+    return label;
+  }
+
   const defaultVal = param.default !== undefined ? String(param.default) : "";
 
-  switch (param.param_type) {
+  switch (param.type) {
     case "string":
       const stringInput = document.createElement("input");
       stringInput.type = "text";
@@ -565,26 +598,35 @@ async function handleExecution(event: SubmitEvent) {
     state.selectedPlugin.parameters.forEach((param) => {
       const value = formData.get(param.name);
       if (value !== null && value !== "") {
-        switch (param.param_type) {
-          case "string":
+        const hasChoices = Array.isArray(param.choices) && param.choices.length > 0;
+        if (hasChoices) {
+          try {
+            params[param.name] = JSON.parse(String(value));
+          } catch {
             params[param.name] = String(value);
-            break;
-          case "number":
-            params[param.name] = Number(value);
-            break;
-          case "integer":
-            params[param.name] = Number.parseInt(String(value), 10);
-            break;
-          case "boolean":
-            params[param.name] = (formData.get(`${param.name}-checkbox`) as string) === "on";
-            break;
-          case "json":
-            try {
-              params[param.name] = JSON.parse(String(value));
-            } catch {
+          }
+        } else {
+          switch (param.type) {
+            case "string":
               params[param.name] = String(value);
-            }
-            break;
+              break;
+            case "number":
+              params[param.name] = Number(value);
+              break;
+            case "integer":
+              params[param.name] = Number.parseInt(String(value), 10);
+              break;
+            case "boolean":
+              params[param.name] = String(value) === "on";
+              break;
+            case "json":
+              try {
+                params[param.name] = JSON.parse(String(value));
+              } catch {
+                params[param.name] = String(value);
+              }
+              break;
+          }
         }
       }
     });

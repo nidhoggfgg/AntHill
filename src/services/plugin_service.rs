@@ -882,6 +882,43 @@ impl PluginService {
                     )));
                 }
             }
+            if let Some(choices) = &param.choices {
+                if choices.is_empty() {
+                    return Err(crate::error::AppError::Execution(format!(
+                        "Parameter '{}' choices cannot be empty",
+                        name
+                    )));
+                }
+                let mut seen_choices = std::collections::HashSet::new();
+                for choice in choices {
+                    if !param.param_type.matches(choice) {
+                        return Err(crate::error::AppError::Execution(format!(
+                            "Choice for parameter '{}' does not match type {:?}",
+                            name, param.param_type
+                        )));
+                    }
+                    let choice_key = serde_json::to_string(choice).map_err(|e| {
+                        crate::error::AppError::Execution(format!(
+                            "Failed to serialize choice for parameter '{}': {}",
+                            name, e
+                        ))
+                    })?;
+                    if !seen_choices.insert(choice_key) {
+                        return Err(crate::error::AppError::Execution(format!(
+                            "Parameter '{}' has duplicate choices",
+                            name
+                        )));
+                    }
+                }
+                if let Some(default) = &param.default {
+                    if !choices.iter().any(|choice| choice == default) {
+                        return Err(crate::error::AppError::Execution(format!(
+                            "Default value for parameter '{}' must be one of the choices",
+                            name
+                        )));
+                    }
+                }
+            }
         }
 
         let json = serde_json::to_string(&parameters).map_err(|e| {

@@ -57,6 +57,8 @@ pub struct PluginParameter {
     pub param_type: PluginParamType,
     pub description: Option<String>,
     pub default: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

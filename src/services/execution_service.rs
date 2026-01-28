@@ -239,6 +239,7 @@ impl ExecutionService {
                     name, schema_param.param_type
                 )));
             }
+            Self::ensure_choice(schema_param, &value)?;
             resolved.insert(name, value);
         }
 
@@ -247,6 +248,7 @@ impl ExecutionService {
                 continue;
             }
             if let Some(default) = &param.default {
+                Self::ensure_choice(param, default)?;
                 resolved.insert(param.name.clone(), default.clone());
             } else {
                 return Err(AppError::Execution(format!(
@@ -257,6 +259,19 @@ impl ExecutionService {
         }
 
         Ok(resolved)
+    }
+
+    fn ensure_choice(param: &PluginParameter, value: &serde_json::Value) -> Result<()> {
+        let Some(choices) = &param.choices else {
+            return Ok(());
+        };
+        if choices.iter().any(|choice| choice == value) {
+            return Ok(());
+        }
+        Err(AppError::Execution(format!(
+            "Parameter '{}' must be one of the choices",
+            param.name
+        )))
     }
 
     fn ensure_min_atom_node_version(
