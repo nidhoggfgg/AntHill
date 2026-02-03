@@ -1,6 +1,6 @@
 use crate::error::{AppError, Result};
 use crate::executor::{NodeExecutor, PluginExecutor, PythonExecutor};
-use crate::models::{Execution, ExecutionPhase, ExecutionStatus, PluginParameter};
+use crate::models::{Execution, ExecutionPhase, ExecutionStatus, PluginParamType, PluginParameter};
 use crate::paths;
 use crate::repository::{ExecutionRepository, PluginRepository};
 use chrono::Utc;
@@ -438,9 +438,40 @@ impl ExecutionService {
         let Some(choices) = &param.choices else {
             return Ok(());
         };
-        if choices.iter().any(|choice| choice == value) {
+
+        let matches_choice = |choice: &serde_json::Value, candidate: &serde_json::Value| {
+            if choice == candidate {
+                return true;
+            }
+            choice
+                .as_object()
+                .and_then(|obj| obj.get("value"))
+                .is_some_and(|choice_value| choice_value == candidate)
+        };
+
+        if param.param_type == PluginParamType::MultiSelect {
+            let items: Vec<&serde_json::Value> = value
+                .as_array()
+                .map(|arr| arr.iter().collect())
+                .unwrap_or_else(|| vec![value]);
+            for item in items {
+                if !choices.iter().any(|choice| matches_choice(choice, item)) {
+                    return Err(AppError::Execution(format!(
+                        "Parameter '{}' must be one of the choices",
+                        param.name
+                    )));
+                }
+            }
             return Ok(());
         }
+
+        if choices
+            .iter()
+            .any(|choice| matches_choice(choice, value))
+        {
+            return Ok(());
+        }
+
         Err(AppError::Execution(format!(
             "Parameter '{}' must be one of the choices",
             param.name
