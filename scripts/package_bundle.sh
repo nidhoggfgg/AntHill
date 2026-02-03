@@ -226,7 +226,7 @@ rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/bin"
 mkdir -p "$BUNDLE_DIR/conf"
 
-cp "$BIN_PATH" "$BUNDLE_DIR/bin/$BIN_NAME"
+cp "$BIN_PATH" "$BUNDLE_DIR/$BIN_NAME"
 echo "$VERSION" > "$BUNDLE_DIR/VERSION"
 
 UV_EXT=""
@@ -313,26 +313,7 @@ cat > "$BUNDLE_DIR/conf/config.json" <<EOF
 }
 EOF
 
-if [[ "$OS" == "windows" ]]; then
-  cat > "$BUNDLE_DIR/$NAME.cmd" <<EOF
-@echo off
-setlocal
-set "ROOT_DIR=%~dp0"
-set "PATH=%ROOT_DIR%bin;%PATH%"
-"%ROOT_DIR%bin\\$BIN_NAME" %*
-EOF
-else
-  cat > "$BUNDLE_DIR/$NAME" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-
-ROOT_DIR=\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)
-export PATH="\$ROOT_DIR/bin:\$PATH"
-
-exec "\$ROOT_DIR/bin/$BIN_NAME" "\$@"
-EOF
-  chmod +x "$BUNDLE_DIR/$NAME"
-fi
+# No wrapper scripts; the binary lives at bundle root.
 
 ZIP_PATH="$DIST_DIR/$BUNDLE_NAME.zip"
 rm -f "$ZIP_PATH"

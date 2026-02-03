@@ -20,8 +20,27 @@ use crate::services::{ExecutionService, PluginService, UpdateService};
 use api::create_router;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+fn prepend_bin_to_path() -> anyhow::Result<()> {
+    let bin_dir = crate::paths::install_root()?.join("bin");
+    let mut paths: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).collect())
+        .unwrap_or_default();
+
+    if !paths.iter().any(|path| path == &bin_dir) {
+        paths.insert(0, bin_dir);
+        let new_path = std::env::join_paths(paths)?;
+        // SAFETY: We only mutate PATH at startup before spawning child processes.
+        unsafe {
+            std::env::set_var("PATH", new_path);
+        }
+    }
+
+    Ok(())
+}
 
 async fn run_server<F>(shutdown: F) -> anyhow::Result<()>
 where
@@ -35,6 +54,8 @@ where
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    prepend_bin_to_path()?;
 
     if let Err(err) = UpdateService::apply_pending_update() {
         tracing::error!("Failed to apply pending update: {}", err);
