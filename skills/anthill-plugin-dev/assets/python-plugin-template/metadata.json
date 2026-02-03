@@ -1,0 +1,29 @@
+{
+  "plugin_id": "your-plugin-id",
+  "name": "Your Plugin Name",
+  "version": "0.1.0",
+  "plugin_type": "python",
+  "description": "A clear description of what this plugin does.",
+  "author": "Your Name",
+  "entry_point": "main.py",
+  "min_atom_node_version": "0.1.0",
+  "groups": [
+    {
+      "id": "basic",
+      "label": "Basic"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "example_param",
+      "type": "string",
+      "description": "Description of this parameter.",
+      "default": "default_value",
+      "label": "Example Parameter",
+      "group": "basic"
+    }
+  ],
+  "metadata": {
+    "supports_preview": true
+  }
+}

@@ -1,0 +1,5 @@
+# Add your Python dependencies here
+# One package per line
+# Examples:
+# requests>=2.31.0
+# pyyaml>=6.0
