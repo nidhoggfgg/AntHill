@@ -45,7 +45,7 @@ type Plugin = {
   plugin_id?: string;
   name: string;
   version: string;
-  min_atom_node_version?: string | null;
+  min_anthill_version?: string | null;
   plugin_type: string;
   description: string;
   author: string;
@@ -107,7 +107,7 @@ const dom = {
 };
 
 const state = {
-  baseUrl: localStorage.getItem("atom_node_base_url") || "http://localhost:3000",
+  baseUrl: localStorage.getItem("anthill_base_url") || "http://localhost:6701",
   plugins: [] as Plugin[],
   executions: [] as Execution[],
   connected: false,
@@ -343,7 +343,7 @@ async function connect() {
     return;
   }
   state.baseUrl = baseUrl;
-  localStorage.setItem("atom_node_base_url", baseUrl);
+  localStorage.setItem("anthill_base_url", baseUrl);
 
   const submitBtn = dom.connectForm.querySelector('button[type="submit"]') as HTMLButtonElement;
   submitBtn.disabled = true;
@@ -450,8 +450,8 @@ function renderPluginDetail(plugin: Plugin) {
     ? `<span class="badge badge--success">已启用</span>`
     : `<span class="badge badge--muted">已停用</span>`;
 
-  const minAtomNodeVersion = plugin.min_atom_node_version
-    ? escapeHtml(plugin.min_atom_node_version)
+  const minAtomNodeVersion = plugin.min_anthill_version
+    ? escapeHtml(plugin.min_anthill_version)
     : "无";
 
   const toggleAction = plugin.enabled ? "disable" : "enable";
@@ -1156,7 +1156,7 @@ document.addEventListener("keydown", (event) => {
 
 dom.baseUrlInput.value = state.baseUrl;
 
-if (state.baseUrl && state.baseUrl !== "http://localhost:3000") {
+if (state.baseUrl && state.baseUrl !== "http://localhost:6701") {
   connect();
 } else {
   renderPluginList();

@@ -23,7 +23,7 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
             plugin_id TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             version TEXT NOT NULL,
-            min_atom_node_version TEXT,
+            min_anthill_version TEXT,
             plugin_type INTEGER NOT NULL,
             description TEXT,
             author TEXT,
@@ -66,7 +66,7 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     .execute(&pool)
     .await?;
 
-    ensure_min_atom_node_version_column(&pool).await?;
+    ensure_min_anthill_version_column(&pool).await?;
     ensure_parameter_groups_column(&pool).await?;
     ensure_metadata_column(&pool).await?;
     ensure_execution_new_columns(&pool).await?;
@@ -74,15 +74,15 @@ pub async fn establish_connection(database_url: &str) -> Result<DbPool> {
     Ok(pool)
 }
 
-async fn ensure_min_atom_node_version_column(pool: &DbPool) -> Result<()> {
+async fn ensure_min_anthill_version_column(pool: &DbPool) -> Result<()> {
     let columns = sqlx::query("PRAGMA table_info(plugins)")
         .fetch_all(pool)
         .await?;
     let has_column = columns
         .iter()
-        .any(|row| row.get::<String, _>("name") == "min_atom_node_version");
+        .any(|row| row.get::<String, _>("name") == "min_anthill_version");
     if !has_column {
-        sqlx::query("ALTER TABLE plugins ADD COLUMN min_atom_node_version TEXT")
+        sqlx::query("ALTER TABLE plugins ADD COLUMN min_anthill_version TEXT")
             .execute(pool)
             .await?;
     }

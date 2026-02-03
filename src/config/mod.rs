@@ -13,8 +13,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         let database_url = crate::paths::data_dir()
-            .map(|dir| format!("sqlite:{}", dir.join("atom_node.db").display()))
-            .unwrap_or_else(|_| "sqlite:atom_node.db".to_string());
+            .map(|dir| format!("sqlite:{}", dir.join("anthill.db").display()))
+            .unwrap_or_else(|_| "sqlite:anthill.db".to_string());
         Self {
             database_url,
             host: "127.0.0.1".to_string(),

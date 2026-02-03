@@ -39,7 +39,7 @@ impl ExecutionService {
         if !plugin.enabled {
             return Err(AppError::PluginDisabled);
         }
-        Self::ensure_min_atom_node_version(&plugin.min_atom_node_version)?;
+        Self::ensure_min_anthill_version(&plugin.min_anthill_version)?;
 
         let resolved_params = Self::resolve_parameters(&plugin.parameters, params)?;
         let mut env = HashMap::new();
@@ -70,7 +70,7 @@ impl ExecutionService {
         if !plugin.enabled {
             return Err(AppError::PluginDisabled);
         }
-        Self::ensure_min_atom_node_version(&plugin.min_atom_node_version)?;
+        Self::ensure_min_anthill_version(&plugin.min_anthill_version)?;
 
         let resolved_params = Self::resolve_parameters(&plugin.parameters, params)?;
         let mut env = HashMap::new();
@@ -124,7 +124,7 @@ impl ExecutionService {
         if !plugin.enabled {
             return Err(AppError::PluginDisabled);
         }
-        Self::ensure_min_atom_node_version(&plugin.min_atom_node_version)?;
+        Self::ensure_min_anthill_version(&plugin.min_anthill_version)?;
 
         let resolved_params = Self::resolve_parameters(&plugin.parameters, params)?;
         let mut env = HashMap::new();
@@ -447,32 +447,32 @@ impl ExecutionService {
         )))
     }
 
-    fn ensure_min_atom_node_version(required: &Option<String>) -> Result<()> {
+    fn ensure_min_anthill_version(required: &Option<String>) -> Result<()> {
         let Some(required) = required.as_deref() else {
             return Ok(());
         };
         let trimmed = required.trim();
         if trimmed.is_empty() {
             return Err(AppError::Execution(
-                "Minimum atom_node version cannot be empty".to_string(),
+                "Minimum anthill version cannot be empty".to_string(),
             ));
         }
         let required = Version::parse(trimmed).map_err(|e| {
             AppError::Execution(format!(
-                "Invalid minimum atom_node version '{}': {}",
+                "Invalid minimum anthill version '{}': {}",
                 trimmed, e
             ))
         })?;
         let current = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|e| {
             AppError::Execution(format!(
-                "Invalid current atom_node version '{}': {}",
+                "Invalid current anthill version '{}': {}",
                 env!("CARGO_PKG_VERSION"),
                 e
             ))
         })?;
         if current < required {
             return Err(AppError::Execution(format!(
-                "Plugin requires atom_node >= {}, current version is {}",
+                "Plugin requires anthill >= {}, current version is {}",
                 required, current
             )));
         }

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Package atom_node with uv (no bundled Python), then zip it.
+Package anthill with uv (no bundled Python), then zip it.
 
 Usage:
   scripts/package_bundle.sh [--uv-version X] [--uv-url URL] [--output-dir DIR] [--target TARGET] [--skip-build]
@@ -306,7 +306,7 @@ fi
 
 cat > "$BUNDLE_DIR/conf/config.json" <<EOF
 {
-  "database_url": "sqlite:data/atom_node.db",
+  "database_url": "sqlite:data/anthill.db",
   "host": "127.0.0.1",
   "port": 6701,
   "uv_path": "$UV_RELATIVE_PATH"

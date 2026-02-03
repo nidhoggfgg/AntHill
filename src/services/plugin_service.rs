@@ -18,7 +18,7 @@ struct PackageMetadata {
     plugin_id: Option<String>,
     name: String,
     version: String,
-    min_atom_node_version: Option<String>,
+    min_anthill_version: Option<String>,
     plugin_type: String,
     description: String,
     author: String,
@@ -80,7 +80,7 @@ impl PluginService {
             plugin_id,
             name,
             version,
-            min_atom_node_version,
+            min_anthill_version,
             plugin_type,
             description: _,
             author: _,
@@ -106,7 +106,7 @@ impl PluginService {
         let _ = Self::validate_parameters(parameters)?;
         let _ = Self::validate_groups(groups)?;
         let _ = Self::serialize_metadata(metadata)?;
-        let _ = Self::normalize_min_atom_node_version(min_atom_node_version)?;
+        let _ = Self::normalize_min_anthill_version(min_anthill_version)?;
         let _ = Self::resolve_entry_point(&entry_point, temp_dir.path(), metadata_dir.as_deref())?;
         Self::ensure_newer_version(&version, &existing.version)?;
 
@@ -149,7 +149,7 @@ impl PluginService {
             plugin_id,
             name,
             version,
-            min_atom_node_version,
+            min_anthill_version,
             plugin_type,
             description,
             author,
@@ -176,7 +176,7 @@ impl PluginService {
         let parameters_json = Self::validate_parameters(parameters)?;
         let groups_json = Self::validate_groups(groups)?;
         let metadata_json = Self::serialize_metadata(metadata)?;
-        let min_atom_node_version = Self::normalize_min_atom_node_version(min_atom_node_version)?;
+        let min_anthill_version = Self::normalize_min_anthill_version(min_anthill_version)?;
 
         let internal_id = Uuid::new_v4().to_string();
         let plugin_dir = Self::plugin_dir_for(&plugin_id)?;
@@ -245,7 +245,7 @@ impl PluginService {
             plugin_id: plugin_id.clone(),
             name,
             version,
-            min_atom_node_version,
+            min_anthill_version,
             plugin_type,
             description,
             author,
@@ -598,32 +598,32 @@ impl PluginService {
         Ok(())
     }
 
-    fn normalize_min_atom_node_version(raw: Option<String>) -> Result<Option<String>> {
+    fn normalize_min_anthill_version(raw: Option<String>) -> Result<Option<String>> {
         let Some(raw) = raw else {
             return Ok(None);
         };
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             return Err(AppError::Execution(
-                "Minimum atom_node version cannot be empty".to_string(),
+                "Minimum anthill version cannot be empty".to_string(),
             ));
         }
         let required = Version::parse(trimmed).map_err(|e| {
             AppError::Execution(format!(
-                "Invalid minimum atom_node version '{}': {}",
+                "Invalid minimum anthill version '{}': {}",
                 trimmed, e
             ))
         })?;
         let current = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|e| {
             AppError::Execution(format!(
-                "Invalid current atom_node version '{}': {}",
+                "Invalid current anthill version '{}': {}",
                 env!("CARGO_PKG_VERSION"),
                 e
             ))
         })?;
         if current < required {
             return Err(AppError::Execution(format!(
-                "Plugin requires atom_node >= {}, current version is {}",
+                "Plugin requires anthill >= {}, current version is {}",
                 required, current
             )));
         }

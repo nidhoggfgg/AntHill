@@ -12,7 +12,7 @@ pub fn run_tray_loop(shutdown_tx: tokio::sync::oneshot::Sender<()>) -> anyhow::R
     let icon = build_tray_icon()?;
     let _tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
-        .with_tooltip("atom_node")
+        .with_tooltip("anthill")
         .with_icon(icon)
         .build()?;
 

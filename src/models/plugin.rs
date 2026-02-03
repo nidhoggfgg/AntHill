@@ -7,7 +7,7 @@ pub struct Plugin {
     pub plugin_id: String,
     pub name: String,
     pub version: String,
-    pub min_atom_node_version: Option<String>,
+    pub min_anthill_version: Option<String>,
     pub plugin_type: PluginType,
     pub description: String,
     pub author: String,

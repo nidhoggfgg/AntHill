@@ -31,7 +31,7 @@ where
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "atom_node=debug,tower_http=debug,axum=debug".into()),
+                .unwrap_or_else(|_| "anthill=debug,tower_http=debug,axum=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -42,7 +42,7 @@ where
 
     // Load configuration
     let config = Config::from_env()?;
-    tracing::info!("Starting atom_node with config: {:?}", config);
+    tracing::info!("Starting anthill with config: {:?}", config);
 
     if let Some(path) = config.database_url.strip_prefix("sqlite:") {
         let path = std::path::Path::new(path);

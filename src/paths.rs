@@ -7,13 +7,13 @@ const WORK_DIR: &str = "work_dir";
 const CONF_DIR: &str = "conf";
 const DATA_DIR: &str = "data";
 const PYTHON_ENVS_DIR: &str = "python_envs";
-const HOME_ENV: &str = "ATOM_NODE_HOME";
+const HOME_ENV: &str = "ANTHILL_HOME";
 
 pub fn install_root() -> Result<PathBuf> {
     if let Ok(home) = std::env::var(HOME_ENV) {
         if home.trim().is_empty() {
             return Err(AppError::Execution(
-                "ATOM_NODE_HOME is set but empty".to_string(),
+                "ANTHILL_HOME is set but empty".to_string(),
             ));
         }
         return Ok(PathBuf::from(home));
